@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --ink:#111827; --sub:#5B6472; --muted:#8A93A3; --line:#E4E8EF;
+    --card:#FFFFFF; --bg:#F3F5F8;
+    --bad:#E2571B; --bad-soft:#FFF1E8; --bad-line:#F6C6AC;
+    --good:#0E7C72; --good-soft:#E8F7F4; --good-line:#A7DED6;
+    --blue:#2563EB;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg)}
+  body{
+    font-family:"WenQuanYi Micro Hei","WenQuanYi Zen Hei","Noto Sans CJK SC",sans-serif;
+    color:var(--ink); -webkit-font-smoothing:antialiased;
+  }
+  .page{
+    width:1600px; padding:52px 56px 40px;
+    background:
+      radial-gradient(900px 420px at 8% -10%, #E9EEF7 0%, transparent 60%),
+      radial-gradient(900px 420px at 100% 0%, #E7F4F1 0%, transparent 55%),
+      var(--bg);
+  }
+  .eyebrow{font-size:13px;letter-spacing:.22em;color:var(--muted);font-weight:700;text-transform:uppercase}
+  h1{font-size:38px;line-height:1.2;margin:12px 0 10px;letter-spacing:-.02em}
+  .sub{font-size:16px;line-height:1.6;color:var(--sub);margin:0;max-width:1320px}
+  .sub b{color:var(--ink);font-weight:700}
+  .grid{display:grid;grid-template-columns:720px 1fr;gap:24px;margin-top:30px}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:24px 24px 20px;box-shadow:0 10px 30px rgba(17,24,39,.05);
+  }
+  .card.bad{box-shadow:0 10px 30px rgba(226,87,27,.07)}
+  .card.good{box-shadow:0 10px 30px rgba(14,124,114,.08)}
+  .card-head{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .tag{font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px}
+  .tag.bad{color:var(--bad);background:var(--bad-soft);border:1px solid var(--bad-line)}
+  .tag.good{color:var(--good);background:var(--good-soft);border:1px solid var(--good-line)}
+  h2{font-size:21px;margin:0;letter-spacing:-.01em}
+  .pill{margin-left:auto;font-size:12px;color:var(--sub);background:#F5F7FA;border:1px solid var(--line);padding:4px 9px;border-radius:999px}
+  .steps{position:relative}
+  .step{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+  .num{
+    width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:700;background:#F3F5F8;color:var(--sub);border:1px solid var(--line);
+  }
+  .bad .num{background:var(--bad-soft);color:var(--bad);border-color:var(--bad-line)}
+  .good .num{background:var(--good-soft);color:var(--good);border-color:var(--good-line)}
+  .body{min-width:0;flex:1}
+  .title{font-size:15px;font-weight:700;line-height:1.35}
+  .desc{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:2px}
+  .meta{font-size:11.5px;color:var(--bad);background:var(--bad-soft);border:1px solid var(--bad-line);padding:3px 7px;border-radius:7px;white-space:nowrap;flex:none}
+  .good .meta{color:var(--good);background:var(--good-soft);border-color:var(--good-line)}
+  .arrow{height:20px;margin-left:14px;border-left:1px dashed var(--bad-line);position:relative}
+  .arrow::after{
+    content:"";position:absolute;left:-4px;bottom:-1px;width:7px;height:7px;
+    border-right:1.5px solid var(--bad);border-bottom:1.5px solid var(--bad);transform:rotate(45deg);
+  }
+  .good .arrow{border-left:1px solid var(--good-line)}
+  .good .arrow::after{border-color:var(--good)}
+  .loop-note{
+    margin-top:16px;display:flex;align-items:center;gap:9px;
+    color:var(--bad);background:var(--bad-soft);border:1px dashed var(--bad-line);
+    border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45;
+  }
+  .loop-note .icon{font-size:17px;line-height:1}
+  .loop-note b{font-weight:700}
+  .pipeline-note{
+    margin-top:16px;display:flex;align-items:center;gap:9px;
+    color:var(--good);background:var(--good-soft);border:1px dashed var(--good-line);
+    border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45;
+  }
+  .pipeline-note .icon{font-size:17px;line-height:1}
+  .time{
+    margin-top:24px;background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:22px 24px 18px;box-shadow:0 10px 30px rgba(17,24,39,.05);
+  }
+  .time-head{display:flex;align-items:baseline;gap:10px;margin-bottom:16px}
+  .time-head h2{font-size:19px}
+  .hint{font-size:12px;color:var(--muted);margin-left:auto}
+  .time-row{display:grid;grid-template-columns:64px 1fr 112px;gap:14px;align-items:center;margin:10px 0}
+  .time-label{font-size:13px;font-weight:700}
+  .time-label.bad{color:var(--bad)} .time-label.good{color:var(--good)}
+  .bar{height:34px;border-radius:10px;overflow:hidden;display:flex;background:#F1F3F7;border:1px solid var(--line)}
+  .seg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;position:relative}
+  .seg + .seg{box-shadow:inset 1px 0 0 rgba(255,255,255,.35)}
+  .b1{background:#F08A4B}.b2{background:#D9480F}.b3{background:#F3B27F;color:#7C2D12}
+  .g1{background:#2FA79A}.g2{background:#0E7C72}.g3{background:#78C9BF;color:#064E46}.g4{background:#C9E9E4;color:#0B5E56}
+  .total{font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
+  .total.bad{color:var(--bad)} .total.good{color:var(--good)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin:4px 0 2px 78px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+  .principles{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;align-items:center}
+  .principles .lead{font-size:12px;color:var(--muted);letter-spacing:.08em;font-weight:700;margin-right:2px}
+  .chip{font-size:12.5px;color:#334155;background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 12px;box-shadow:0 2px 6px rgba(17,24,39,.03)}
+  .chip b{color:var(--good);font-weight:700}
+  .foot{margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.5}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">Agent Dev Loop / 验证流程</div>
+  <h1>把“编辑 → 全量验证”的循环，压成一条流水线</h1>
+  <p class="sub">同一段 UI 插件工作：<b>5 次页面加载 + 2 次 19s 真等 + 2 次读图 + 1 次返工</b>，可以压到 <b>1 次加载 + 假时钟 + 1 张图</b>。省的不是打字，是重复启动、真实等待和返工。</p>
+
+  <div class="grid">
+    <section class="card bad">
+      <div class="card-head">
+        <span class="tag bad">现在</span>
+        <h2>编辑 → 全量验证</h2>
+        <span class="pill">重复 5 次</span>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div class="body"><div class="title">改一行代码</div><div class="desc">选择器、三元、文案，任何小改动</div></div><div class="meta">×5</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">2</div><div class="body"><div class="title">启动 Chromium + 加载页面</div><div class="desc">每个验证脚本都重新 launch、登录态、等 networkidle</div></div><div class="meta">2–4s / 次</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">3</div><div class="body"><div class="title">跑完整脚本 + 读截图</div><div class="desc">功能断言和视觉确认混在一起，读图再判断</div></div><div class="meta">截图 ×2</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">4</div><div class="body"><div class="title">真实等待 19s 测 stall</div><div class="desc">用 wall clock 等过阈值，不能快进</div></div><div class="meta">×2 · ~38s</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">5</div><div class="body"><div class="title">发现契约不符 / 标签 bug</div><div class="desc">假设 tool state=running，实际是 shimmer 行；回到 1</div></div><div class="meta">返工</div></div>
+      </div>
+      <div class="loop-note"><span class="icon">↺</span><span><b>循环的代价：</b>每次小改都重付“启动 + 加载 + 等待 + 读图”的固定成本。</span></div>
+    </section>
+
+    <section class="card good">
+      <div class="card-head">
+        <span class="tag good">优化后</span>
+        <h2>4 段流水线</h2>
+        <span class="pill">1 次主加载</span>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="num">A</div><div class="body"><div class="title">先探针，不写代码</div><div class="desc">一次页面加载 dump JSON：运行行、工具状态、插槽、composer rect</div></div><div class="meta">1 次加载</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">B</div><div class="body"><div class="title">先纯函数，后 UI</div><div class="desc">classifyRun / phaseLabel / activityLabel / clock，Node 直接测</div></div><div class="meta">&lt;1s</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">C</div><div class="body"><div class="title">一个 harness 跑完断言矩阵</div><div class="desc">注入 thinking / tool / writing；假时钟测 stall；失败只重跑单项</div></div><div class="meta">1 次加载</div></div>
+        <div class="arrow"></div>
+        <div class="step"><div class="num">D</div><div class="body"><div class="title">最后只截一张图</div><div class="desc">功能用 DOM / computed style / rect 断言；截图只做视觉确认</div></div><div class="meta">1 张图</div></div>
+      </div>
+      <div class="pipeline-note"><span class="icon">✓</span><span><b>把固定成本付一次：</b>探针确认契约，纯函数抓逻辑 bug，harness 一次跑完，截图最后看。</span></div>
+    </section>
+  </div>
+
+  <section class="time">
+    <div class="time-head"><h2>时间账</h2><span class="hint">示意，非精确测量</span></div>
+    <div class="time-row">
+      <div class="time-label bad">现在</div>
+      <div class="bar">
+        <div class="seg b1" style="width:15%">5× 加载</div>
+        <div class="seg b2" style="width:32%">2× 19s 真等</div>
+        <div class="seg b3" style="width:53%">截图 / 返工 / 反复验证</div>
+      </div>
+      <div class="total bad">≈ 2–3 min</div>
+    </div>
+    <div class="legend">
+      <span><i class="dot" style="background:#F08A4B"></i>启动 + 加载</span>
+      <span><i class="dot" style="background:#D9480F"></i>wall-clock 等待</span>
+      <span><i class="dot" style="background:#F3B27F"></i>截图、返工、全量重测</span>
+    </div>
+    <div class="time-row">
+      <div class="time-label good">优化后</div>
+      <div class="bar">
+        <div class="seg g1" style="width:10%">1× 加载</div>
+        <div class="seg g2" style="width:9%">Node</div>
+        <div class="seg g3" style="width:58%">harness 断言矩阵</div>
+        <div class="seg g4" style="width:23%">1× 截图</div>
+      </div>
+      <div class="total good">≈ 40–60 s</div>
+    </div>
+    <div class="legend">
+      <span><i class="dot" style="background:#2FA79A"></i>页面加载</span>
+      <span><i class="dot" style="background:#0E7C72"></i>纯函数测试</span>
+      <span><i class="dot" style="background:#78C9BF"></i>一次跑完所有状态</span>
+      <span><i class="dot" style="background:#C9E9E4"></i>最后视觉确认</span>
+    </div>
+  </section>
+
+  <div class="principles">
+    <span class="lead">四条规则</span>
+    <span class="chip"><b>先探针</b> · 后编码</span>
+    <span class="chip"><b>先纯函数</b> · 后 UI</span>
+    <span class="chip"><b>一次验证</b> · 一次截图</span>
+    <span class="chip"><b>失败</b> · 只重跑单项</span>
+  </div>
+  <div class="foot">如果只是让轨迹页“看起来短”：合并连续同类工具调用、默认折叠思考行、按阶段分组——视觉变短，但真实步骤不变。</div>
+</div>
+</body>
+</html>
