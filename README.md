@@ -134,7 +134,10 @@ location.reload()
 | 上游包名变了 | 拒绝，避免装成另一个包 |
 | 拉取或校验失败 | 自动 `reset --hard` 回到升级前的提交 |
 | 不在 git 工作区 / 没有远端 / detached HEAD | 明确报错，不尝试任何写入 |
+| 网络抖动、连接超时 | 自动重试一次；仍失败则归类为「超时 / 连不上 / 需要凭据」，而不是把 `Command failed: git …` 原样丢给用户 |
 | Host 进程没有 HMR | 升级仍然完成，但会提示需要重启 `dsh` |
+
+「检查更新」碰到网络问题不会像以前那样只显示一行 `Command failed: git -C …`：`lib/update.js` 会把失败归类成 `fetch-timeout` / `fetch-offline` / `fetch-auth` / `git-missing` / `status-failed`，给一句能行动的中文说明，原始 stderr 留在 `detail` 里便于排查。git 调用带 `GIT_TERMINAL_PROMPT=0`，需要凭据的仓库会立刻失败而不是挂住等输入。
 
 接口都在 `/api/stream-polish` 下，走 Connection 的 `/api` 通道，因此和设置页一样受登录 cookie 与浏览器信任检查保护：`GET /info`、`GET /update`、`POST /update/apply`。它们不接受任何用户输入（插件目录与远端在激活时就固定了），所以不存在路径注入面。
 

@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
-import { createUpdater, findGitRoot } from '../lib/update.js'
+import { classifyFetchFailure, createUpdater, findGitRoot } from '../lib/update.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -197,5 +197,42 @@ test('a missing remote is reported, never thrown', async () => {
   const updater = createUpdater({ packageDir: repo.plugin })
   const status = await updater.status()
   assert.equal(status.ok, false)
-  assert.equal(status.error, 'fetch-failed')
+  assert.equal(status.error, 'status-failed')
+  assert.match(status.message, /读取仓库状态失败/)
+})
+
+test('an unreachable remote is classified as offline, with a retry', async () => {
+  const repo = await fixture()
+  await git(repo.plugin, ['remote', 'set-url', 'origin', 'https://127.0.0.1:9/nope.git'])
+  const updater = createUpdater({ packageDir: repo.plugin })
+  const started = Date.now()
+  const status = await updater.status()
+  assert.equal(status.ok, false)
+  assert.equal(status.error, 'fetch-offline')
+  assert.match(status.message, /连不上远端 origin/)
+  assert.ok(Date.now() - started < 20_000, 'two bounded attempts, not a hang')
+})
+
+test('fetch failures are classified instead of surfacing the raw command error', () => {
+  const timeout = Object.assign(new Error('Command failed: git -C /x fetch --prune origin'), {
+    killed: true,
+    signal: 'SIGTERM',
+  })
+  const timedOut = classifyFetchFailure(timeout, 'origin')
+  assert.equal(timedOut.error, 'fetch-timeout')
+  assert.match(timedOut.message, /超时（已自动重试一次）/)
+  assert.match(timedOut.detail, /Command failed/, 'the raw text is kept for diagnosis')
+
+  const missing = classifyFetchFailure(Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }), 'origin')
+  assert.equal(missing.error, 'git-missing')
+
+  const auth = classifyFetchFailure(new Error("fatal: could not read Username for 'https://github.com'"), 'origin')
+  assert.equal(auth.error, 'fetch-auth')
+
+  const offline = classifyFetchFailure(new Error("fatal: unable to access 'https://x/': Could not resolve host"), 'origin')
+  assert.equal(offline.error, 'fetch-offline')
+
+  const other = classifyFetchFailure(new Error('fatal: something else entirely'), 'origin')
+  assert.equal(other.error, 'fetch-failed')
+  assert.equal(other.message, '无法从 origin 获取更新')
 })
