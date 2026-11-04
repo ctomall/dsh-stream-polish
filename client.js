@@ -381,7 +381,9 @@ window.__ModuleLoader__.load({
       'settings.title': '流式输出美化',
       'settings.intro': '下面的开关立即生效，并只保存在本浏览器；默认值来自插件在档案里的配置。',
       'settings.display': '显示',
+      'settings.displayNote': '正文与胶囊',
       'settings.timing': '时长',
+      'settings.timingNote': '单位毫秒',
       'settings.log': '诊断',
       'settings.enabled': '总开关',
       'settings.enabledHint': '关闭后不挂载样式、观察器和运行胶囊',
@@ -456,7 +458,9 @@ window.__ModuleLoader__.load({
       'settings.title': 'Stream polish',
       'settings.intro': 'These switches apply immediately and live in this browser only; the row config in the profile supplies the defaults.',
       'settings.display': 'Display',
+      'settings.displayNote': 'Transcript and capsule',
       'settings.timing': 'Timing',
+      'settings.timingNote': 'Milliseconds',
       'settings.log': 'Diagnostics',
       'settings.enabled': 'Enabled',
       'settings.enabledHint': 'Off mounts no style, observer, or capsule',
@@ -791,26 +795,41 @@ window.__ModuleLoader__.load({
 
     /** Settings-page styles; mounted whether or not the decoration is enabled. */
     const PAGE_CSS = [
-      '.dshSPS_page{display:flex;flex-direction:column;gap:14px;max-width:640px;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_page{display:flex;flex-direction:column;gap:18px;max-width:720px;color:var(--dsw-alias-label-primary)}',
       '.dshSPS_head{display:flex;flex-direction:column;gap:4px}',
       '.dshSPS_title{margin:0;font-size:15px;font-weight:600;line-height:22px}',
       '.dshSPS_intro{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
       '.dshSPS_meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
       '.dshSPS_badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:11px;line-height:20px;color:var(--dsw-alias-state-warn-primary);border:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,transparent)}',
-      '.dshSPS_group{display:flex;flex-direction:column;gap:2px}',
-      '.dshSPS_groupTitle{margin:0;padding-top:6px;font-size:12px;font-weight:600;line-height:18px;color:var(--dsw-alias-label-secondary)}',
-      '.dshSPS_rows{display:flex;flex-direction:column;border-top:.5px solid var(--dsw-alias-border-l2)}',
-      '.dshSPS_row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:12px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}',
-      '.dshSPS_rowText{display:flex;flex-direction:column;gap:4px;min-width:0}',
-      '.dshSPS_rowTitle{font-size:14px;line-height:20px}',
-      '.dshSPS_rowHint{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}',
-      '.dshSPS_rowControl{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:none;min-width:0}',
+      '.dshSPS_section{display:flex;flex-direction:column;gap:10px}',
+      '.dshSPS_sectionHead{display:flex;align-items:baseline;gap:10px;min-width:0}',
+      '.dshSPS_sectionTitle{margin:0;font-size:12px;font-weight:600;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_sectionNote{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+
+      '.dshSPS_master{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border:.5px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_masterText{display:flex;flex-direction:column;gap:3px;min-width:0}',
+      '.dshSPS_masterTitle{font-size:14px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_masterHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+
+      '.dshSPS_grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:10px;align-items:stretch}',
+      '.dshSPS_tile{display:flex;flex-direction:column;gap:8px;padding:12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2);min-width:0}',
+      '.dshSPS_tile[data-off=true]{opacity:.5}',
+      '.dshSPS_tileTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}',
+      '.dshSPS_tileTitle{font-size:13px;font-weight:500;line-height:18px;color:var(--dsw-alias-label-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dshSPS_tileHint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary);margin-top:auto}',
+
+      '.dshSPS_line{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_lineText{display:flex;flex-direction:column;gap:2px;min-width:0}',
+      '.dshSPS_lineTitle{font-size:13px;line-height:18px;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_lineHint{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_lineControl{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:none;min-width:0}',
 
       '.dshSPS_switch{position:relative;flex:none;width:36px;height:20px;padding:0;border:0;border-radius:999px;background:var(--dsw-alias-border-l2);appearance:none;cursor:pointer;transition:background-color .16s ease}',
       '.dshSPS_switch[data-on=true]{background:var(--dsw-alias-brand-primary)}',
       '.dshSPS_knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.28);transition:transform .16s ease}',
       '.dshSPS_switch[data-on=true] .dshSPS_knob{transform:translateX(16px)}',
       '.dshSPS_switch:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}',
+      '.dshSPS_switch:disabled{cursor:default;opacity:.55}',
 
       '.dshSPS_seg{display:inline-flex;gap:2px;padding:2px;border:.5px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2)}',
       '.dshSPS_segBtn{height:24px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;font-weight:500;line-height:24px;white-space:nowrap;cursor:pointer}',
@@ -822,6 +841,7 @@ window.__ModuleLoader__.load({
       '.dshSPS_input{box-sizing:border-box;width:88px;height:28px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}',
       '.dshSPS_input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}',
       '.dshSPS_input[aria-invalid=true]{border-color:var(--dsw-alias-state-error-primary)}',
+      '.dshSPS_input:disabled{cursor:default;color:var(--dsw-alias-label-tertiary)}',
       '.dshSPS_unit{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
 
       '.dshSPS_foot{display:flex;flex-wrap:wrap;align-items:center;gap:12px}',
@@ -868,21 +888,93 @@ window.__ModuleLoader__.load({
       '@keyframes dshSPS_breath{0%,100%{opacity:.95}50%{opacity:.78}}',
       '@keyframes dshSPS_pulse{0%,100%{opacity:1}50%{opacity:.45}}',
       '@media (prefers-reduced-motion:reduce){.dshSPS_demoLine.dshSPS_demoIn,.dshSPS_demoCaret,.dshSPS_demoPillDot{animation:none}}',
-      '@media (max-width:560px){.dshSPS_row{flex-wrap:wrap;gap:10px}.dshSPS_previewHint{display:none}}',
+      '@media (max-width:560px){.dshSPS_master{flex-wrap:wrap;gap:10px}.dshSPS_grid{grid-template-columns:1fr}.dshSPS_previewHint{display:none}}',
       '@media (prefers-reduced-motion:reduce){.dshSPS_switch,.dshSPS_knob{transition:none}}',
     ].join('')
 
     /**
-     * Label + hint column shared by every settings row.
-     * @param {{ title: string, hint: string, children: object }} props - copy and the control.
+     * One titled group of settings cards.
+     * @param {{ title: string, note?: string, children: object }} props - group copy.
+     * @returns {object} the section element.
+     */
+    function SettingsSection(props) {
+      return h('section', { className: 'dshSPS_section' },
+        h('div', { className: 'dshSPS_sectionHead' },
+          h('h4', { className: 'dshSPS_sectionTitle' }, props.title),
+          props.note === undefined ? null : h('span', { className: 'dshSPS_sectionNote' }, props.note)),
+        props.children)
+    }
+
+    /**
+     * The master switch: full width above the grid, because it gates everything.
+     * @param {{ title: string, hint: string, label: string, checked: boolean, onChange: Function }} props - switch state.
      * @returns {object} the row element.
      */
-    function SettingsRow(props) {
-      return h('div', { className: 'dshSPS_row' },
-        h('div', { className: 'dshSPS_rowText' },
-          h('span', { className: 'dshSPS_rowTitle' }, props.title),
-          h('span', { className: 'dshSPS_rowHint' }, props.hint)),
-        h('div', { className: 'dshSPS_rowControl' }, props.children))
+    function SettingsMaster(props) {
+      return h('div', { className: 'dshSPS_master' },
+        h('div', { className: 'dshSPS_masterText' },
+          h('span', { className: 'dshSPS_masterTitle' }, props.title),
+          h('span', { className: 'dshSPS_masterHint' }, props.hint)),
+        h(SettingsSwitch, {
+          checked: props.checked,
+          label: props.label,
+          onChange: props.onChange,
+        }))
+    }
+
+    /**
+     * One switch inside the card grid.
+     * @param {{ title: string, hint: string, label: string, checked: boolean, disabled?: boolean, onChange: Function }} props - switch state.
+     * @returns {object} the card element.
+     */
+    function SettingsToggleCard(props) {
+      return h('div', {
+        className: 'dshSPS_tile',
+        'data-off': props.disabled === true ? 'true' : 'false',
+      },
+        h('div', { className: 'dshSPS_tileTop' },
+          h('span', { className: 'dshSPS_tileTitle', title: props.title }, props.title),
+          h(SettingsSwitch, {
+            checked: props.checked,
+            label: props.label,
+            disabled: props.disabled,
+            onChange: props.onChange,
+          })),
+        h('span', { className: 'dshSPS_tileHint' }, props.hint))
+    }
+
+    /**
+     * One bounded integer inside the card grid.
+     * @param {{ title: string, hint: string, option: string, value: number, t: Function, disabled?: boolean, onChange: Function }} props - field state.
+     * @returns {object} the card element.
+     */
+    function SettingsNumberCard(props) {
+      return h('div', {
+        className: 'dshSPS_tile',
+        'data-off': props.disabled === true ? 'true' : 'false',
+      },
+        h('span', { className: 'dshSPS_tileTitle', title: props.title }, props.title),
+        h(SettingsNumber, {
+          option: props.option,
+          value: props.value,
+          t: props.t,
+          disabled: props.disabled,
+          onChange: props.onChange,
+        }),
+        h('span', { className: 'dshSPS_tileHint' }, props.hint))
+    }
+
+    /**
+     * One full-width line: a label column plus its control (used by the log level).
+     * @param {{ title: string, hint: string, children: object }} props - copy and the control.
+     * @returns {object} the line element.
+     */
+    function SettingsLine(props) {
+      return h('div', { className: 'dshSPS_line' },
+        h('div', { className: 'dshSPS_lineText' },
+          h('span', { className: 'dshSPS_lineTitle' }, props.title),
+          h('span', { className: 'dshSPS_lineHint' }, props.hint)),
+        h('div', { className: 'dshSPS_lineControl' }, props.children))
     }
 
     /**
@@ -943,6 +1035,7 @@ window.__ModuleLoader__.load({
           max: rule.max,
           step: 1,
           value: draft,
+          disabled: props.disabled === true ? true : undefined,
           'aria-label': props.t('settings.' + props.option),
           'aria-invalid': valid ? undefined : 'true',
           onChange: (event) => {
@@ -1174,40 +1267,67 @@ window.__ModuleLoader__.load({
       }
 
       function renderPage() {
+        const caretOff = !settings.caret
+        const stripOff = !settings.runStrip
+        const toggle = (key, disabled) => h(SettingsToggleCard, {
+          key,
+          title: t('settings.' + key),
+          hint: t('settings.' + key + 'Hint'),
+          label: t('settings.' + key),
+          checked: settings[key],
+          disabled,
+          onChange: (next) => update({ [key]: next }),
+        })
+        const field = (key, disabled) => h(SettingsNumberCard, {
+          key,
+          title: t('settings.' + key),
+          hint: t('settings.range', { min: SPEC[key].min, max: SPEC[key].max }),
+          option: key,
+          value: settings[key],
+          t,
+          disabled,
+          onChange: (next) => update({ [key]: next }),
+        })
+
         return h('div', { className: 'dshSPS_page' },
-        h('div', { className: 'dshSPS_head' },
-          h('h3', { className: 'dshSPS_title' }, t('settings.title')),
-          h('p', { className: 'dshSPS_intro' }, t('settings.intro')),
-          h('div', { className: 'dshSPS_meta' },
-            store.isDefault() ? null : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal')))),
+          h('div', { className: 'dshSPS_head' },
+            h('h3', { className: 'dshSPS_title' }, t('settings.title')),
+            h('p', { className: 'dshSPS_intro' }, t('settings.intro')),
+            h('div', { className: 'dshSPS_meta' },
+              store.isDefault() ? null : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal')))),
 
-        h(PreviewPanel, { settings, t }),
+          h(PreviewPanel, { settings, t }),
 
-        h(UpdatePanel, { t }),
+          h(UpdatePanel, { t }),
 
-        h('div', { className: 'dshSPS_group' },
-          h('h4', { className: 'dshSPS_groupTitle' }, t('settings.display')),
-          h('div', { className: 'dshSPS_rows' },
-            h(SettingsRow, { title: t('settings.enabled'), hint: t('settings.enabledHint') }, toggle('enabled')),
-            h(SettingsRow, { title: t('settings.blockFade'), hint: t('settings.blockFadeHint') }, toggle('blockFade')),
-            h(SettingsRow, { title: t('settings.caret'), hint: t('settings.caretHint') }, toggle('caret')),
-            h(SettingsRow, { title: t('settings.settleFade'), hint: t('settings.settleFadeHint') }, toggle('settleFade')),
-            h(SettingsRow, { title: t('settings.runStrip'), hint: t('settings.runStripHint') }, toggle('runStrip')),
-            h(SettingsRow, { title: t('settings.showElapsed'), hint: t('settings.showElapsedHint') }, toggle('showElapsed')),
-            h(SettingsRow, { title: t('settings.showActivity'), hint: t('settings.showActivityHint') }, toggle('showActivity')))),
+          h(SettingsSection, { title: t('settings.display'), note: t('settings.displayNote') },
+            h(SettingsMaster, {
+              title: t('settings.enabled'),
+              hint: t('settings.enabledHint'),
+              label: t('settings.enabled'),
+              checked: settings.enabled,
+              onChange: (next) => update({ enabled: next }),
+            }),
+            h('div', { className: 'dshSPS_grid' },
+              toggle('blockFade', !settings.enabled),
+              toggle('caret', !settings.enabled),
+              toggle('settleFade', !settings.enabled || caretOff),
+              toggle('runStrip', !settings.enabled),
+              toggle('showElapsed', !settings.enabled || stripOff),
+              toggle('showActivity', !settings.enabled || stripOff))),
 
-        h('div', { className: 'dshSPS_group' },
-          h('h4', { className: 'dshSPS_groupTitle' }, t('settings.timing')),
-          h('div', { className: 'dshSPS_rows' },
-            h(SettingsRow, { title: t('settings.blockFadeMs'), hint: t('settings.range', { min: SPEC.blockFadeMs.min, max: SPEC.blockFadeMs.max }) }, number('blockFadeMs')),
-            h(SettingsRow, { title: t('settings.caretPeriodMs'), hint: t('settings.range', { min: SPEC.caretPeriodMs.min, max: SPEC.caretPeriodMs.max }) }, number('caretPeriodMs')),
-            h(SettingsRow, { title: t('settings.settleMs'), hint: t('settings.range', { min: SPEC.settleMs.min, max: SPEC.settleMs.max }) }, number('settleMs')),
-            h(SettingsRow, { title: t('settings.stallMs'), hint: t('settings.range', { min: SPEC.stallMs.min, max: SPEC.stallMs.max }) }, number('stallMs')))),
+          h(SettingsSection, { title: t('settings.timing'), note: t('settings.timingNote') },
+            h('div', { className: 'dshSPS_grid' },
+              field('blockFadeMs', !settings.enabled || !settings.blockFade),
+              field('caretPeriodMs', !settings.enabled || caretOff),
+              field('settleMs', !settings.enabled || caretOff || !settings.settleFade),
+              field('stallMs', !settings.enabled))),
 
-        h('div', { className: 'dshSPS_group' },
-          h('h4', { className: 'dshSPS_groupTitle' }, t('settings.log')),
-          h('div', { className: 'dshSPS_rows' },
-            h(SettingsRow, { title: t('settings.logLevel'), hint: t('settings.logLevelHint') },
+          h(SettingsSection, { title: t('settings.log') },
+            h(SettingsLine, {
+              title: t('settings.logLevel'),
+              hint: t('settings.logLevelHint'),
+            },
               h(SettingsSegments, {
                 group: 'logLevel',
                 label: t('settings.logLevel'),
@@ -1216,16 +1336,16 @@ window.__ModuleLoader__.load({
                 t,
                 labelFor: (id) => id,
                 onChange: (next) => update({ logLevel: next }),
-              })))),
+              }))),
 
-        h('div', { className: 'dshSPS_foot' },
-          h('button', {
-            type: 'button',
-            className: 'dshSPS_button',
-            disabled: store.isDefault(),
-            onClick: () => store.reset(),
-          }, t('settings.reset')),
-          h('span', { className: 'dshSPS_footHint' }, t('settings.footHint'))))
+          h('div', { className: 'dshSPS_foot' },
+            h('button', {
+              type: 'button',
+              className: 'dshSPS_button',
+              disabled: store.isDefault(),
+              onClick: () => store.reset(),
+            }, t('settings.reset')),
+            h('span', { className: 'dshSPS_footHint' }, t('settings.footHint'))))
       }
     }
 

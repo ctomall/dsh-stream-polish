@@ -437,3 +437,59 @@ test('the preview stylesheet follows the configured durations', { skip }, async 
   assert.equal(result.caret.width, '2px')
   assert.equal(result.dot.name, 'dshSPS_pulse')
 })
+
+test('the settings layout is a three-column grid that collapses on narrow screens', { skip }, async (t) => {
+  const client = await readFile(CLIENT, 'utf8')
+  const dir = await mkdtemp(join(tmpdir(), 'stream-polish-'))
+  const file = join(dir, 'layout.html')
+  const card = '<div class="dshSPS_tile"><div class="dshSPS_tileTop"><span class="dshSPS_tileTitle">t</span><button class="dshSPS_switch" data-on="true" role="switch" aria-checked="true"><span class="dshSPS_knob"></span></button></div><span class="dshSPS_tileHint">h</span></div>'
+  await writeFile(file, harness(client, undefined, `
+    mod.apply(ctx)
+    document.body.innerHTML = '<div class="dshSPS_page" id="page">'
+      + '<section class="dshSPS_section"><div class="dshSPS_master"><div class="dshSPS_masterText">'
+      + '<span class="dshSPS_masterTitle">master</span><span class="dshSPS_masterHint">hint</span></div>'
+      + '<button class="dshSPS_switch" data-on="false" role="switch" aria-checked="false"><span class="dshSPS_knob"></span></button></div>'
+      + '<div class="dshSPS_grid" id="grid">${card}${card}${card}${card}${card}${card}</div>'
+      + '</section><section class="dshSPS_section"><div class="dshSPS_line"><div class="dshSPS_lineText">'
+      + '<span class="dshSPS_lineTitle">log</span><span class="dshSPS_lineHint">hint</span></div>'
+      + '<div class="dshSPS_seg"><button class="dshSPS_segBtn" data-active="true">warn</button></div></div></section></div>'
+    const grid = document.getElementById('grid')
+    const cardStyle = getComputedStyle(document.querySelector('.dshSPS_tile'))
+    const masterStyle = getComputedStyle(document.querySelector('.dshSPS_master'))
+    const lineStyle = getComputedStyle(document.querySelector('.dshSPS_line'))
+    window.__wide = {
+      columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+      pageWidth: getComputedStyle(document.getElementById('page')).width,
+      gap: getComputedStyle(grid).gap,
+      cardRadius: cardStyle.borderRadius,
+      masterDisplay: masterStyle.display,
+      lineDisplay: lineStyle.display,
+    }
+    window.__columns = () => getComputedStyle(grid).gridTemplateColumns.split(' ').length
+    return window.__wide
+  `))
+
+  const devtools = new Devtools(CHROME)
+  t.after(() => devtools.close())
+  await devtools.start()
+  await devtools.send('Emulation.setDeviceMetricsOverride', {
+    width: 1000, height: 900, deviceScaleFactor: 1, mobile: false,
+  })
+  await devtools.open('file://' + file)
+  const wide = await devtools.evaluate('window.__done__')
+
+  assert.equal(wide.columns, 3, 'three cards across at a desktop width')
+  assert.equal(wide.pageWidth, '720px', 'the page is capped at 720px, not a narrow column')
+  assert.equal(wide.gap, '10px')
+  assert.equal(wide.cardRadius, '10px')
+  assert.equal(wide.masterDisplay, 'flex')
+  assert.equal(wide.lineDisplay, 'flex')
+
+  await devtools.send('Emulation.setDeviceMetricsOverride', {
+    width: 420, height: 900, deviceScaleFactor: 1, mobile: false,
+  })
+  const narrow = await devtools.evaluate(
+    'new Promise((resolve) => requestAnimationFrame(() => resolve(window.__columns())))',
+  )
+  assert.equal(narrow, 1, 'one card per row below 560px')
+})
