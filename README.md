@@ -36,6 +36,68 @@
 - 没有运行行时，`[data-streaming]` 存在即为 `Writing reply`，否则为 `Thinking`。
 - `[data-chat-running]` 里的总时长文字、`[data-shimmer]` 里的计时、纯 `12s` / `1m 5s` 文本都不算“新输出”，否则停滞检测永远不会触发。
 
+## 配置
+
+行为全部由一个配置对象决定，默认值就是 1.0.0 的行为：不配置任何东西，观感与之前完全一致。改配置不需要改源码，刷新页面即生效。
+
+加载优先级（低 → 高）：
+
+| 优先级 | 来源 | 位置 |
+| --- | --- | --- |
+| 1 | 内置默认值 | `config.js` 的 `SPEC`，与 1.0.0 完全一致 |
+| 2 | 包自带 patch | 本包 `cordis.patch.yml` 中 `stream-polish` 行的 `config` |
+| 3 | 档案 patch 覆盖 | `$DSH_PROFILE_DIR/cordis.patch.yml` 中同 id 的 `config` 段 |
+| 4 | 浏览器本地覆盖 | `localStorage` 键 `dsh.stream-polish.settings`（调参、临时调试） |
+| 5 | 测试钩子 | `window.__DSH_SP_STALL_MS__`，仅覆盖 `stallMs` |
+
+Host 半在行激活时用 `config.js` 校验一次：合法值随 `webserver/index-inject` 下发给 Client 半，非法值在 Host 控制台报一条消息并回落到默认值，不会抛错、不会让页面变白。Client 半再叠加第 4、5 层，并用同一张表校验浏览器本地覆盖。
+
+配置项（全部可选，未设置即取默认值）：
+
+| 配置项 | 类型 | 默认值 | 取值范围 | 作用 | 必填 |
+| --- | --- | --- | --- | --- | --- |
+| `enabled` | boolean | true | true / false | 总开关；false 时不挂样式、观察器和运行胶囊 | 否 |
+| `blockFade` | boolean | true | true / false | 流式期间新挂载的 Markdown 块是否做淡入 | 否 |
+| `blockFadeMs` | number（整数） | 160 | 80–600 | 块淡入时长，毫秒 | 否 |
+| `caret` | boolean | true | true / false | 正在书写的末尾是否显示呼吸光标 | 否 |
+| `caretPeriodMs` | number（整数） | 1200 | 400–4000 | 光标一次呼吸的周期，毫秒 | 否 |
+| `settleFade` | boolean | true | true / false | 落定时光标是否淡出；false 则直接消失 | 否 |
+| `settleMs` | number（整数） | 260 | 100–1000 | 落定淡出时长，毫秒；清理定时器取该值加 80ms | 否 |
+| `stallMs` | number（整数） | 15000 | 500–600000 | 多久没有新输出就显示「无新输出」，毫秒 | 否 |
+| `runStrip` | boolean | true | true / false | 输入框上方是否显示运行胶囊 | 否 |
+| `showElapsed` | boolean | true | true / false | 胶囊是否显示当前阶段已用时长 | 否 |
+| `showActivity` | boolean | true | true / false | 胶囊是否显示最近活动 / 停滞文案 | 否 |
+| `logLevel` | enum | warn | silent, error, warn, info, debug | 本插件日志级别 | 否 |
+
+`logLevel` 只影响本插件自己的输出：`silent` 全静音；`error` 只报错误；`warn`（默认）在配置有误时告警，合法配置下完全静默；`info` 额外报告一次「configuration accepted」；`debug` 再打印解析后的完整配置对象。
+
+示例——包自带 patch 或档案 patch 里都可以这样写：
+
+```yaml
+- id: stream-polish
+  config:
+    stallMs: 8000        # 8 秒没有新输出就提示
+    caretPeriodMs: 1600  # 光标呼吸慢一点
+    showActivity: false  # 胶囊只留阶段和时长
+```
+
+临时调参（只影响当前浏览器，不改任何文件）：
+
+```js
+localStorage.setItem('dsh.stream-polish.settings', JSON.stringify({ caret: false }))
+location.reload()
+```
+
+写错时的报错（配置项名 + 期望值 + 实际收到的值 + 回落到什么）：
+
+```text
+[@local/stream-polish] config.stallMs must be an integer between 500 and 600000; got 'fast'; using 15000.
+[@local/stream-polish] config.logLevel must be one of "silent" | "error" | "warn" | "info" | "debug"; got 'verbose'; using 'warn'.
+[@local/stream-polish] config.typoKey is not a recognized option (ignored).
+```
+
+配置项少于要求的粒度也没关系：`enabled: false` 只是不挂载任何界面，行仍留在 Loader 里，改回 `true` 刷新即可恢复。
+
 ## 为什么能做到
 
 `AssistantMarkdown` 在流式期间给根节点加 `data-streaming`，Markdown 的每个块都是这个根节点下的直接子元素。插件只用稳定属性和结构选择器，不依赖 `hWmORq_*`、`_markdown_*` 这类带 hash 的 CSS Module 类名。
@@ -61,28 +123,48 @@ Markdown 块的 React key 是**源码字符偏移**（例如 `0`、`57`、`566`�
 
 | 文件 | 作用 |
 | --- | --- |
-| `client.js` | Client 半：样式表、settling 观察器、运行观察器、运行胶囊 |
-| `index.js` | Host 半：空 `apply`，让插件出现在 Loader 中 |
-| `cordis.patch.yml` | 插入 `stream-polish` 行 |
+| `client.js` | Client 半：配置解析、样式表、settling 观察器、运行观察器、运行胶囊 |
+| `index.js` | Host 半：校验行配置、按 `logLevel` 报告问题、下发 `__DSH_STREAM_POLISH__` |
+| `config.js` | 配置契约：`SPEC`、默认值、校验与错误文案（Host 与文档共用） |
+| `cordis.patch.yml` | 插入 `stream-polish` 行，并写出全部默认配置及取值范围 |
 | `locale/zh.json`、`locale/en.json` | 插件管理页的标题与描述 |
 | `icon.svg` | 原创图标 |
-| `test/run.py` | 单次加载的验收 harness（9 条断言，可覆盖 stall 阈值） |
+| `test/run.py` | 浏览器验收 harness（9 条断言，可覆盖 stall 阈值，需要 Playwright） |
+| `test/config.test.mjs` | 配置契约测试：默认值、合法值、非法值、边界、文档覆盖 |
+| `test/client.test.mjs` | Client 半测试：镜像一致性、优先级、错误文案、样式生成、挂载开关 |
 | `docs/*.png`、`docs/*.gif` | 光标、落定序列、运行胶囊和插件页截图 |
 
 ## 安装
 
-当前 `web` 档案已经安装并启用。重新安装或换档案时：
+插件只有在档案的 `dsh.profile.bundles` 里才会挂载；只写 `dependencies` 不够。安装或换档案时：
 
 ```bash
 # 在 agent 会话里
-plugin_manager install_bundle target=link:/home/ubuntu/ctomall/stream-polish
+plugin_manager install_bundle target=link:/home/pro/dsh/stream-polish
 ```
 
-或者手动把 `"@local/stream-polish": "link:/home/ubuntu/ctomall/stream-polish"` 加进档案的 `package.json` 依赖与 `dsh.profile.bundles`，再 `pnpm install`。
+或者手动把 `"@local/stream-polish": "link:/home/ubuntu/ctomall/stream-polish"` 加进档案的 `package.json` 依赖与 `dsh.profile.bundles`（缺任意一项都不会挂载），再 `pnpm install`。
 
 安装后刷新一次页面；之后由 Client HMR 接管。
 
 ## 测试
+
+两层，都不需要新依赖。
+
+### 契约与单元测试（`node:test`）
+
+```bash
+cd stream-polish && npm test
+```
+
+- `test/config.test.mjs` 覆盖每个配置项的默认值、合法值、非法值和边界值（`min`/`max` 接受，`min-1`/`max+1` 拒绝），锁定「空配置 == 1.0.0 行为」，并检查 README 表格是否写全了所有配置项。
+- `test/client.test.mjs` 在 `node:vm` 里加载 `client.js`，验证镜像表与 `config.js` 一致、四层优先级、错误文案与 Host 完全同文、样式表按配置生成，以及 `enabled` / `caret` / `settleFade` / `runStrip` 的挂载开关。
+- `test/host.test.mjs` 验证 `index.js` 的下发内容、`logLevel` 诊断门限和非法值回落。
+- `test/browser.test.mjs` 用 Node 内置 WebSocket 走 CDP 驱动本机 Chromium，真开页面验证计算样式：默认 160ms / 1.2s / 0.26s、改配置后时长跟着变、`caret:false`、`enabled:false`、`runStrip:false`，以及 `prefers-reduced-motion` 降级。找不到 Chromium 时自动跳过，可用 `CHROME_PATH` 指定。
+
+`npm run lint` 用 `node --check` 检查三个源文件的语法。
+
+### 真实档案里的验收（需要 Playwright）
 
 一条命令、一次页面加载、9 条断言，不读截图、不真等 15 秒：
 
@@ -95,6 +177,8 @@ python3 stream-polish/test/run.py --stall-ms 800
 脚本检查：胶囊存在与阶段文案、与 composer 的间距、显示/隐藏前后 composer 高度不变、停滞状态、暗色表面、减少动态下的圆点动画、console error、样式表挂载。输出逐条 `PASS/FAIL`，失败时退出码为 1。
 
 ## 验证记录
+
+以下为 1.0.0 的验收记录；1.1.0 的配置与浏览器验证见上一节。
 
 - 插件在 `web` 档案中为 `enabled: true`、`fiberPhase: active`；Client 清单包含 `@local/stream-polish/client.js`。
 - 计算样式：探针段落的 `animation-name: dshSP_blockIn`、时长 `0.16s`；末尾伪元素 `content: ""`、宽 `2px`、`animation-name: dshSP_caret`。
@@ -110,6 +194,17 @@ python3 stream-polish/test/run.py --stall-ms 800
 
 - 光标只在以段落、标题、列表项或引用段落结尾时出现；正在写代码块或表格时没有光标。
 - 运行胶囊的工具名来自运行行首行文本；DSH 改动运行行的文案或本地化标题时，会退化为 `Running commands` 或 `Thinking`。
-- 停滞阈值固定 15 秒，还不能在设置里调；也没有暂停、后台运行或完成通知，停止操作仍用 composer 自带的停止按钮。
+- 停滞阈值由 `stallMs` 配置（默认 15 秒），但没有暂停、后台运行或完成通知，停止操作仍用 composer 自带的停止按钮。
+- 配置只在模块加载时解析一次：改配置文件后刷新页面生效，不会在页面已打开时热更新；也没有设置页，浏览器本地覆盖要写 `localStorage`。
 - 减少动态效果下不做落定淡出，光标会直接消失。
 - 选择器依赖 `AssistantMarkdown` 当前的三层结构；DSH 大版本改结构时需要跟着调。
+
+## 变更记录
+
+### 1.1.0
+
+- 新增 `config.js` 配置契约，12 个可配置项，默认值与 1.0.0 完全一致。
+- Host 半由空 `apply` 改为校验行配置、按 `logLevel` 报告问题，并通过 `webserver/index-inject` 下发 `__DSH_STREAM_POLISH__`。
+- Client 半按配置生成样式、开关观察器与运行胶囊，支持四层优先级与浏览器本地覆盖；保留 `__DSH_SP_STALL_MS__` 测试钩子。
+- 新增 4 个测试文件（41 条断言），`npm test` 一条命令跑完；补 `npm run lint`。
+- 无破坏性变更：包名、`exports` 既有入口、`apply` 语义与默认观感不变。

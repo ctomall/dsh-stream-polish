@@ -1,23 +1,29 @@
 {
   "name": "@local/stream-polish",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Soft block fade, breathing caret, and a live run capsule for long waits",
   "type": "module",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./config": "./config.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
     "client.js",
+    "config.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
     "README.md"
   ],
+  "scripts": {
+    "test": "node --test test/config.test.mjs test/client.test.mjs test/host.test.mjs test/browser.test.mjs",
+    "lint": "node --check config.js && node --check index.js && node --check client.js"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

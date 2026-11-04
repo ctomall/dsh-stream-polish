@@ -1,3 +1,28 @@
+# Stream polish: a presentation-only bundle.
+#
+# Every option below is optional and is written at its default, so deleting the
+# whole `config` block reproduces this row's behavior exactly. Values are
+# validated by ./config.js: a malformed key is reported on the Host console at
+# the configured `logLevel` and falls back to its default instead of breaking
+# the page.
+#
+# Precedence, low to high: built-in defaults < this row < a profile patch
+# override of `stream-polish` < this browser's saved overrides
+# (localStorage `dsh.stream-polish.settings`) < the `__DSH_SP_STALL_MS__` test
+# hook. A page reload re-resolves, so a change never needs a source edit.
 - insert:
     - id: stream-polish
       name: '@local/stream-polish'
+      config:
+        enabled: true        # false: mount no style, observer, or capsule
+        blockFade: true      # fade new markdown blocks while streaming
+        blockFadeMs: 160     # 80..600
+        caret: true          # breathing caret after the text being written
+        caretPeriodMs: 1200  # 400..4000
+        settleFade: true     # fade the caret out once the reply settles
+        settleMs: 260        # 100..1000; the cleanup timer adds 80ms
+        stallMs: 15000       # 500..600000; "no new output" threshold
+        runStrip: true       # capsule above the composer while running
+        showElapsed: true    # capsule shows the elapsed clock
+        showActivity: true   # capsule shows last activity / stall text
+        logLevel: warn       # silent | error | warn | info | debug
