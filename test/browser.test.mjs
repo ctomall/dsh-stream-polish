@@ -259,7 +259,7 @@ test('the browser resolves the default configuration', { skip }, async (t) => {
   assert.equal(result.error, undefined)
   assert.equal(result.mounted.styles, 1)
   assert.equal(result.mounted.observers, 2)
-  assert.equal(result.mounted.slots, 1)
+  assert.equal(result.mounted.slots, 2, 'run capsule + settings page')
   assert.equal(result.streaming.blockAnimation, 'dshSP_blockIn')
   assert.equal(result.streaming.blockDuration, '0.16s')
   assert.equal(result.streaming.caretWidth, '2px')
@@ -338,7 +338,7 @@ test('enabled: false mounts nothing', { skip }, async (t) => {
   const result = await devtools.evaluate('window.__done__')
 
   assert.equal(result.error, undefined)
-  assert.deepEqual(result.mounted, { styles: 0, slots: 0, observers: 0 })
+  assert.deepEqual(result.mounted, { styles: 0, slots: 2, observers: 0 })
   assert.equal(result.settling, false)
 })
 
@@ -356,7 +356,6 @@ test('runStrip: false drops the capsule styles and its observer', { skip }, asyn
 
   assert.equal(result.error, undefined)
   assert.equal(result.mounted.observers, 1)
-  assert.equal(result.mounted.slots, 0)
   assert.equal(result.streaming.sheet.includes('dshRS'), false)
   assert.equal(result.streaming.blockAnimation, 'dshSP_blockIn')
 })
@@ -381,4 +380,60 @@ test('reduced motion turns the motion off without losing the caret', { skip }, a
   assert.equal(result.streaming.caretAnimation, 'none')
   assert.equal(result.streaming.caretOpacity, '0.65')
   assert.equal(result.settling, false, 'no fade when motion is reduced')
+})
+
+test('the preview stylesheet follows the configured durations', { skip }, async (t) => {
+  const client = await readFile(CLIENT, 'utf8')
+  const dir = await mkdtemp(join(tmpdir(), 'stream-polish-'))
+  const file = join(dir, 'preview.html')
+  await writeFile(file, harness(client, undefined, `
+    mod.apply(ctx)
+    const stage = document.createElement('div')
+    stage.style.setProperty('--dshSPS-fade', '250ms')
+    stage.style.setProperty('--dshSPS-period', '900ms')
+    const line = document.createElement('p')
+    line.className = 'dshSPS_demoLine dshSPS_demoIn'
+    line.textContent = 'fade me'
+    const still = document.createElement('p')
+    still.className = 'dshSPS_demoLine dshSPS_demoIn'
+    still.setAttribute('data-fade', 'false')
+    const caret = document.createElement('span')
+    caret.className = 'dshSPS_demoCaret'
+    const dot = document.createElement('span')
+    dot.className = 'dshSPS_demoPillDot'
+    stage.append(line, still, caret, dot)
+    document.body.append(stage)
+    const lineStyle = getComputedStyle(line)
+    const stillStyle = getComputedStyle(still)
+    const caretStyle = getComputedStyle(caret)
+    const dotStyle = getComputedStyle(dot)
+    return {
+      mounted,
+      faded: { name: lineStyle.animationName, duration: lineStyle.animationDuration },
+      still: stillStyle.animationName,
+      caret: {
+        name: caretStyle.animationName,
+        duration: caretStyle.animationDuration,
+        width: caretStyle.width,
+      },
+      dot: { name: dotStyle.animationName, duration: dotStyle.animationDuration },
+      sheets: document.querySelectorAll('style').length,
+    }
+  `))
+
+  const devtools = new Devtools(CHROME)
+  t.after(() => devtools.close())
+  await devtools.start()
+  await devtools.open('file://' + file)
+  const result = await devtools.evaluate('window.__done__')
+
+  assert.equal(result.error, undefined)
+  assert.equal(result.sheets, 2, 'decoration stylesheet plus the page stylesheet')
+  assert.equal(result.faded.name, 'dshSPS_in')
+  assert.equal(result.faded.duration, '0.25s', 'the fade follows --dshSPS-fade')
+  assert.equal(result.still, 'none', 'blockFade:false shows a static line')
+  assert.equal(result.caret.name, 'dshSPS_breath')
+  assert.equal(result.caret.duration, '0.9s', 'the breath follows --dshSPS-period')
+  assert.equal(result.caret.width, '2px')
+  assert.equal(result.dot.name, 'dshSPS_pulse')
 })

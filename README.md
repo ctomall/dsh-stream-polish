@@ -98,6 +98,46 @@ location.reload()
 
 配置项少于要求的粒度也没关系：`enabled: false` 只是不挂载任何界面，行仍留在 Loader 里，改回 `true` 刷新即可恢复。
 
+## 设置页
+
+插件在那里挂载后，**设置 › 插件 › 流式输出美化** 有一页自己的设置：
+
+- **显示**：总开关、块淡入、呼吸光标、落定淡出、运行胶囊、胶囊里的已用时长和最近活动，七个开关。
+- **时长**：块淡入、光标呼吸周期、落定淡出、停滞阈值，输入框按 `config.js` 的边界校验，越界只是标红并退回上一个合法值，不会写进配置。
+- **诊断**：日志级别 `silent` / `error` / `warn` / `info` / `debug`。
+- **预览**：页面顶部的迷你对话片段用当前配置实时重放——新段落按你填的毫秒数淡入、末尾光标按你设的周期呼吸、胶囊按开关显示阶段/时长/活动；改任意一项立刻看到差别，点「重播」再放一次。
+- **恢复默认**：清掉本浏览器的覆盖值，回到档案里配置的默认值。
+
+改动**立即生效**，不需要刷新：样式表按新配置重建，观察器按开关增删，胶囊的段落跟着 `showElapsed` / `showActivity` 变化。标题右侧出现「本浏览器已改动」的标记，表示当前值和档案默认值不同。
+
+保存位置是 `localStorage` 的 `dsh.stream-polish.settings`，**只属于当前浏览器**；要改所有浏览器的默认值，仍然改档案里的 `cordis.patch.yml`（见上一节的优先级表）。
+
+> 本档案里的 `cordis.patch.yml` 把 `runStrip` 关掉了：`stream-aura` 已经在同一个位置渲染运行卡片，两个胶囊会叠在一起。想要小胶囊时在设置页打开「运行胶囊」即可。
+
+## 在线升级
+
+设置页顶部是「在线升级」卡片：显示当前版本与提交、远端版本与提交，两个按钮——**检查更新**、**一键升级**。
+
+升级走的就是这个仓库自己的 git 工作区（`link:` 安装，所以不需要包管理器）：
+
+1. `git fetch --prune origin`，比较 `HEAD` 与上游分支，算出落后/领先多少提交；
+2. 只做 `git merge --ff-only`，也就是**只快进，绝不改写历史**；
+3. 升级后重新读 `package.json`，包名或 version 不对就 `git reset --hard` 回滚；
+4. 成功时 Host 半调用 Loader 的 `hmr.reconcileProfile()`，把改动过的模块重新导入，所以新的 `index.js` 不用重启进程也生效；浏览器那半刷新页面即可。
+
+安全边界：
+
+| 情况 | 行为 |
+| --- | --- |
+| 工作区有未提交改动 | 拒绝，提示先提交或 stash，工作区不动 |
+| 本地领先上游（有未推送提交） | 拒绝快进，提示先处理这些提交 |
+| 上游包名变了 | 拒绝，避免装成另一个包 |
+| 拉取或校验失败 | 自动 `reset --hard` 回到升级前的提交 |
+| 不在 git 工作区 / 没有远端 / detached HEAD | 明确报错，不尝试任何写入 |
+| Host 进程没有 HMR | 升级仍然完成，但会提示需要重启 `dsh` |
+
+接口都在 `/api/stream-polish` 下，走 Connection 的 `/api` 通道，因此和设置页一样受登录 cookie 与浏览器信任检查保护：`GET /info`、`GET /update`、`POST /update/apply`。它们不接受任何用户输入（插件目录与远端在激活时就固定了），所以不存在路径注入面。
+
 ## 为什么能做到
 
 `AssistantMarkdown` 在流式期间给根节点加 `data-streaming`，Markdown 的每个块都是这个根节点下的直接子元素。插件只用稳定属性和结构选择器，不依赖 `hWmORq_*`、`_markdown_*` 这类带 hash 的 CSS Module 类名。
@@ -126,6 +166,8 @@ Markdown 块的 React key 是**源码字符偏移**（例如 `0`、`57`、`566`�
 | `client.js` | Client 半：配置解析、样式表、settling 观察器、运行观察器、运行胶囊 |
 | `index.js` | Host 半：校验行配置、按 `logLevel` 报告问题、下发 `__DSH_STREAM_POLISH__` |
 | `config.js` | 配置契约：`SPEC`、默认值、校验与错误文案（Host 与文档共用） |
+| `lib/update.js` | 在线升级：git 工作区定位、fetch / 状态比较、快进、回滚 |
+| `lib/routes.js` | `/api/stream-polish` 的三个路由（info / update / update/apply） |
 | `cordis.patch.yml` | 插入 `stream-polish` 行，并写出全部默认配置及取值范围 |
 | `locale/zh.json`、`locale/en.json` | 插件管理页的标题与描述 |
 | `icon.svg` | 原创图标 |
@@ -158,7 +200,7 @@ cd stream-polish && npm test
 ```
 
 - `test/config.test.mjs` 覆盖每个配置项的默认值、合法值、非法值和边界值（`min`/`max` 接受，`min-1`/`max+1` 拒绝），锁定「空配置 == 1.0.0 行为」，并检查 README 表格是否写全了所有配置项。
-- `test/client.test.mjs` 在 `node:vm` 里加载 `client.js`，验证镜像表与 `config.js` 一致、四层优先级、错误文案与 Host 完全同文、样式表按配置生成，以及 `enabled` / `caret` / `settleFade` / `runStrip` 的挂载开关。
+- `test/client.test.mjs` 在 `node:vm` 里加载 `client.js`，验证镜像表与 `config.js` 一致、四层优先级、错误文案与 Host 完全同文、样式表按配置生成、`enabled` / `caret` / `settleFade` / `runStrip` 的挂载开关，以及设置页写入后**立即重建**样式、按差量持久化、恢复默认。
 - `test/host.test.mjs` 验证 `index.js` 的下发内容、`logLevel` 诊断门限和非法值回落。
 - `test/browser.test.mjs` 用 Node 内置 WebSocket 走 CDP 驱动本机 Chromium，真开页面验证计算样式：默认 160ms / 1.2s / 0.26s、改配置后时长跟着变、`caret:false`、`enabled:false`、`runStrip:false`，以及 `prefers-reduced-motion` 降级。找不到 Chromium 时自动跳过，可用 `CHROME_PATH` 指定。
 
@@ -195,7 +237,9 @@ python3 stream-polish/test/run.py --stall-ms 800
 - 光标只在以段落、标题、列表项或引用段落结尾时出现；正在写代码块或表格时没有光标。
 - 运行胶囊的工具名来自运行行首行文本；DSH 改动运行行的文案或本地化标题时，会退化为 `Running commands` 或 `Thinking`。
 - 停滞阈值由 `stallMs` 配置（默认 15 秒），但没有暂停、后台运行或完成通知，停止操作仍用 composer 自带的停止按钮。
-- 配置只在模块加载时解析一次：改配置文件后刷新页面生效，不会在页面已打开时热更新；也没有设置页，浏览器本地覆盖要写 `localStorage`。
+- 设置页改的是本浏览器的覆盖值；档案里的默认值仍需编辑 `cordis.patch.yml` 并刷新一次页面。
+- 在线升级只处理 git 走 `link:` 的安装方式；换成 tarball 或 npm 安装后按钮会明确报「不在 git 工作区」，需要走插件管理页。
+- 升级的 Host 侧重载依赖 HMR；档案里关掉 HMR 时升级会完成但需要重启 `dsh`，页面会提示。
 - 减少动态效果下不做落定淡出，光标会直接消失。
 - 选择器依赖 `AssistantMarkdown` 当前的三层结构；DSH 大版本改结构时需要跟着调。
 
@@ -208,3 +252,13 @@ python3 stream-polish/test/run.py --stall-ms 800
 - Client 半按配置生成样式、开关观察器与运行胶囊，支持四层优先级与浏览器本地覆盖；保留 `__DSH_SP_STALL_MS__` 测试钩子。
 - 新增 4 个测试文件（41 条断言），`npm test` 一条命令跑完；补 `npm run lint`。
 - 无破坏性变更：包名、`exports` 既有入口、`apply` 语义与默认观感不变。
+
+### 1.2.0
+
+- 新增设置页（`settings.plugins.tab`）：12 个配置项全部可视化，改动立即生效，按差量存 `localStorage`，可一键恢复档案默认值。
+- 设置页顶部新增**实时预览**：迷你对话片段按当前配置重放淡入、呼吸光标和胶囊，点「重播」再放一次；任何控件改动都会立刻反映在预览里。
+- 本档案的 `cordis.patch.yml` 默认关掉运行胶囊（`stream-aura` 已占同一位置），随时可在设置页打开。
+- 新增在线一键 git 升级：`/api/stream-polish/{info,update,update/apply}` 三个路由，快进 + 校验 + 失败回滚 + `hmr.reconcileProfile()` 热重载 Host 半。
+- `enabled: false` 不再整体退出：设置页仍然可用，否则用户关掉后没有入口再打开。
+- 测试从 41 条增加到 59 条：新增真实 git 仓库的升级测试、路由测试、设置存储/热更新测试。
+- 无破坏性变更：包名、既有导出与默认观感不变；`apply` 仍然接受 `(ctx, config)`。

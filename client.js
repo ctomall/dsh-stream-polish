@@ -1,22 +1,23 @@
 /**
  * Stream polish, Client half.
  *
- * Two presentation-only surfaces:
+ * Three surfaces:
  *  - a soft fade for markdown blocks while an Assistant reply streams, plus a
  *    breathing caret that fades out when the reply settles;
  *  - a compact run capsule above the composer that names the current phase,
- *    counts elapsed time, and calls out stretches with no new output.
+ *    counts elapsed time, and calls out stretches with no new output;
+ *  - a settings page inside Settings -> Plugins that edits every option live
+ *    and hosts the one-click Git upgrade of this bundle.
  *
- * It touches no renderer state, no Session data, and no host code. Selectors
- * use the stable attributes the Chat publishes (`data-streaming`, `data-tool`,
- * `data-state`, `data-chat-flow`, `data-chat-running`), never hashed CSS-module
- * class names.
+ * It touches no renderer state, no Session data, and no host code beyond the
+ * authenticated `/api/stream-polish` routes. Selectors use the stable
+ * attributes the Chat publishes (`data-streaming`, `data-tool`, `data-state`,
+ * `data-chat-flow`, `data-chat-running`), never hashed CSS-module class names.
  *
- * Everything visible is resolved from one settings object at module load:
- * defaults -> row config published by the Host half (or the patch row applied
- * directly) -> this browser's saved overrides -> the `__DSH_SP_STALL_MS__`
- * test hook. A page reload re-resolves, so changing configuration never needs
- * a source edit.
+ * Settings are resolved once into one store: defaults -> row config published
+ * by the Host half -> this browser's saved overrides -> the
+ * `__DSH_SP_STALL_MS__` test hook. The settings page writes the third layer, so
+ * a change applies immediately and survives a reload without a source edit.
  */
 window.__ModuleLoader__.load({
   id: '@local/stream-polish',
@@ -24,7 +25,7 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
-    /** Locale namespace owned by the run capsule. */
+    /** Locale namespace owned by the run capsule and the settings page. */
     const NS = 'streamPolish'
 
     /** Attribute the plugin adds while a settled caret fades out. */
@@ -215,52 +216,148 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Resolve the effective settings from every source, in precedence order.
-     * @returns {{ settings: Record<string, unknown>, issues: Array<{ key: string, message: string }> }} the resolved state.
+     * Resolve the two lower layers: the row's own defaults and this browser's
+     * saved overrides. The test hook is applied on top of both.
+     * @returns {{ baseline: Record<string, unknown>, saved: Record<string, unknown>, issues: Array<{ key: string, message: string }> }} the layers.
      */
-    function resolveSettings() {
-      const settings = {}
-      for (const key of KEYS) settings[key] = DEFAULTS[key]
+    function resolveLayers() {
+      const baseline = {}
+      for (const key of KEYS) baseline[key] = DEFAULTS[key]
       const issues = []
-      accept(settings, readWire(), issues, 'host')
-      accept(settings, readSaved(), issues, 'saved')
+      accept(baseline, readWire(), issues, 'host')
 
-      // Test hook kept from the previous release: it still wins over everything
-      // and is deliberately not range-checked, because a harness needs a stall
-      // that arrives in under a second.
-      const hook = Number(globalThis.__DSH_SP_STALL_MS__)
-      if (Number.isFinite(hook) && hook > 0) settings.stallMs = Math.round(hook)
+      // The saved layer starts neutral, so an unusable saved key leaves the row
+      // default in place instead of re-reporting the host value.
+      const saved = {}
+      accept(saved, readSaved(), issues, 'saved')
 
-      if (!LOG_LEVELS.includes(settings.logLevel)) settings.logLevel = DEFAULTS.logLevel
-      return { settings, issues }
+      if (!LOG_LEVELS.includes(saved.logLevel)) delete saved.logLevel
+      if (!LOG_LEVELS.includes(baseline.logLevel)) baseline.logLevel = DEFAULTS.logLevel
+      return { baseline, saved, issues }
     }
 
-    const resolved = resolveSettings()
-    const settings = resolved.settings
+    /**
+     * Write the saved layer: only the keys this browser changed.
+     * @param {Record<string, unknown>} value - current settings.
+     * @param {Record<string, unknown>} baseline - the row's own defaults.
+     * @returns {void}
+     */
+    function persist(value, baseline) {
+      const diff = {}
+      for (const key of KEYS) {
+        if (value[key] !== baseline[key]) diff[key] = value[key]
+      }
+      try {
+        if (Object.keys(diff).length === 0) window.localStorage.removeItem(STORAGE_KEY)
+        else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(diff))
+      } catch {
+        // A refused write only loses persistence; the in-memory value still applies.
+      }
+    }
+
+    /**
+     * Build the one observable settings store every surface reads.
+     * @param {Record<string, unknown>} baseline - row defaults plus the test hook.
+     * @param {Record<string, unknown>} saved - this browser's overrides.
+     * @returns {object} the store.
+     */
+    function createSettingsStore(baseline, saved) {
+      let value = { ...baseline, ...saved }
+      const listeners = new Set()
+      const emit = () => {
+        for (const listener of [...listeners]) {
+          try {
+            listener()
+          } catch (error) {
+            console.error(PREFIX + 'settings listener failed: ' + String(error))
+          }
+        }
+      }
+      return {
+        get: () => value,
+        baseline: () => baseline,
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+        isDefault() {
+          return KEYS.every((key) => value[key] === baseline[key])
+        },
+        /**
+         * Apply the keys that are both known and valid; returns whether anything moved.
+         * @param {Record<string, unknown>} patch - candidate values.
+         * @returns {boolean} true when the store changed.
+         */
+        update(patch) {
+          const next = { ...value }
+          let changed = false
+          for (const [key, candidate] of Object.entries(patch)) {
+            if (!isValid(key, candidate) || next[key] === candidate) continue
+            next[key] = candidate
+            changed = true
+          }
+          if (!changed) return false
+          value = next
+          persist(value, baseline)
+          emit()
+          return true
+        },
+        /** Drop this browser's overrides so the row config applies again. */
+        reset() {
+          value = { ...baseline }
+          persist(value, baseline)
+          emit()
+        },
+      }
+    }
+
+    const layers = resolveLayers()
+
+    // The test hook is a launch-time override of `stallMs`; it still wins over
+    // every layer, and is deliberately not range-checked because a harness needs
+    // a stall that arrives in under a second.
+    const hook = Number(globalThis.__DSH_SP_STALL_MS__)
+    if (Number.isFinite(hook) && hook > 0) {
+      layers.baseline.stallMs = Math.round(hook)
+      delete layers.saved.stallMs
+    }
+
+    const store = createSettingsStore(layers.baseline, layers.saved)
+
+    /** Bound translator, set in `apply`; used when a slot omits `t`. */
+    let translate = (key) => key
 
     /** Write one diagnostic line, unless `logLevel` is quieter than `level`. */
     function logAt(level, method, text) {
-      const rank = LEVEL_RANK[settings.logLevel] ?? LEVEL_RANK.warn
+      const rank = LEVEL_RANK[store.get().logLevel] ?? LEVEL_RANK.warn
       if (rank < LEVEL_RANK[level]) return
       const sink = typeof console[method] === 'function' ? console[method] : console.log
       sink.call(console, PREFIX + text)
     }
 
-    for (const issue of resolved.issues) logAt('warn', 'warn', issue.message)
+    for (const issue of layers.issues) logAt('warn', 'warn', issue.message)
     logAt('info', 'info', 'configuration resolved'
-      + (resolved.issues.length === 0 ? '' : ' with ' + resolved.issues.length + ' issue(s)'))
-    logAt('debug', 'debug', 'resolved config ' + JSON.stringify(settings))
+      + (layers.issues.length === 0 ? '' : ' with ' + layers.issues.length + ' issue(s)'))
+    logAt('debug', 'debug', 'resolved config ' + JSON.stringify(store.get()))
 
     /**
-     * Debug surface: the resolved state plus the table it was validated
-     * against. Tests read this to prove the mirror matches `config.js`.
+     * Debug surface: the store, the table it validates against, and the issues
+     * collected on this load. Tests read it to prove the mirror matches
+     * `config.js` and to drive the settings page without a browser.
      */
     globalThis.__DSH_STREAM_POLISH_CLIENT__ = {
       version: WIRE_VERSION,
-      settings,
-      issues: resolved.issues,
-      defaults: DEFAULTS,
       spec: SPEC,
+      defaults: DEFAULTS,
+      issues: layers.issues,
+      store,
+    }
+
+    /** Subscribe a component to the settings store. */
+    function useSettings() {
+      const [, bump] = React.useState(0)
+      React.useEffect(() => store.subscribe(() => bump((value) => value + 1)), [])
+      return store.get()
     }
 
     /** Tool titles that a running command row may show as its first line. */
@@ -278,6 +375,67 @@ window.__ModuleLoader__.load({
       'activity.minutes': '{m}m {n}s 前有活动',
       'stall': '{n}s 无新输出',
       'aria': '{phase}，已用 {elapsed}，{activity}',
+      tab: '流式输出美化',
+      'settings.title': '流式输出美化',
+      'settings.intro': '下面的开关立即生效，并只保存在本浏览器；默认值来自插件在档案里的配置。',
+      'settings.display': '显示',
+      'settings.timing': '时长',
+      'settings.log': '诊断',
+      'settings.enabled': '总开关',
+      'settings.enabledHint': '关闭后不挂载样式、观察器和运行胶囊',
+      'settings.blockFade': '块淡入',
+      'settings.blockFadeHint': '流式期间新出现的段落、列表和代码块淡入',
+      'settings.caret': '呼吸光标',
+      'settings.caretHint': '正在书写的末尾显示一枚呼吸竖线',
+      'settings.settleFade': '落定淡出',
+      'settings.settleFadeHint': '回复落定时光标淡出，而不是直接消失',
+      'settings.runStrip': '运行胶囊',
+      'settings.runStripHint': '输入框上方显示阶段、已用时长和最近活动',
+      'settings.showElapsed': '显示已用时长',
+      'settings.showElapsedHint': '胶囊里保留 mm:ss 计时',
+      'settings.showActivity': '显示最近活动',
+      'settings.showActivityHint': '胶囊里保留活动 / 停滞文案',
+      'settings.blockFadeMs': '块淡入时长',
+      'settings.caretPeriodMs': '光标呼吸周期',
+      'settings.settleMs': '落定淡出时长',
+      'settings.stallMs': '停滞判定阈值',
+      'settings.logLevel': '日志级别',
+      'settings.logLevelHint': '合法配置下默认完全静默',
+      'settings.reset': '恢复默认',
+      'settings.resetHint': '清除本浏览器的覆盖值',
+      'settings.footHint': '改动立即生效；要成为所有浏览器的默认值，请改档案里的 cordis.patch.yml。',
+      'settings.range': '{min}–{max} 毫秒',
+      'settings.loading': '读取版本…',
+      'settings.version': '版本 {version}',
+      'settings.commit': '提交 {commit}',
+      'settings.badgeLocal': '本浏览器已改动',
+      'preview.title': '预览',
+      'preview.replay': '重播',
+      'preview.hint': '下面是用当前配置实时重放的片段，改任何一项都会立刻反映出来。',
+      'preview.settled': '已经在屏幕上的段落不会重播动画。',
+      'preview.fading': '新出现的段落按 {ms}ms 淡入。',
+      'preview.caret': '最后一行带着呼吸光标',
+      'preview.off': '装饰已关闭。打开「总开关」后这里会显示预览。',
+      'preview.noCapsule': '运行胶囊已关闭。',
+      'preview.phase': '正在写回答',
+      'preview.elapsed': '00:12',
+      'preview.activity': '最近活动 <2s',
+      update: '在线升级',
+      'update.title': '在线升级',
+      'update.intro': '从 git 远端快进到最新提交。有未提交改动或本地领先时会拒绝，失败会自动回滚。',
+      'update.check': '检查更新',
+      'update.apply': '一键升级',
+      'update.checking': '检查中…',
+      'update.upgrading': '升级中…',
+      'update.uptodate': '已是最新：{version}',
+      'update.available': '可升级到 {version}，落后 {n} 个提交',
+      'update.upgraded': '已升级到 {version}（{commit}），页面即将刷新',
+      'update.reloading': '正在重载插件…',
+      'update.restart': '已升级，但 Host 模块需要重启 dsh 才能加载',
+      'update.failed': '无法完成升级',
+      'update.noStats': 'Host 半没有提供升级接口',
+      'update.current': '当前',
+      'update.latest': '远端',
     }
 
     /** English copy. */
@@ -292,6 +450,67 @@ window.__ModuleLoader__.load({
       'activity.minutes': 'active {m}m {n}s ago',
       'stall': 'no new output for {n}s',
       'aria': '{phase}, {elapsed} elapsed, {activity}',
+      tab: 'Stream polish',
+      'settings.title': 'Stream polish',
+      'settings.intro': 'These switches apply immediately and live in this browser only; the row config in the profile supplies the defaults.',
+      'settings.display': 'Display',
+      'settings.timing': 'Timing',
+      'settings.log': 'Diagnostics',
+      'settings.enabled': 'Enabled',
+      'settings.enabledHint': 'Off mounts no style, observer, or capsule',
+      'settings.blockFade': 'Block fade',
+      'settings.blockFadeHint': 'Fade paragraphs, lists, and code blocks that appear while streaming',
+      'settings.caret': 'Breathing caret',
+      'settings.caretHint': 'A breathing bar after the text being written',
+      'settings.settleFade': 'Settle fade',
+      'settings.settleFadeHint': 'Fade the caret out when the reply settles instead of dropping it',
+      'settings.runStrip': 'Run capsule',
+      'settings.runStripHint': 'Phase, elapsed time, and last activity above the composer',
+      'settings.showElapsed': 'Show elapsed time',
+      'settings.showElapsedHint': 'Keep the mm:ss counter in the capsule',
+      'settings.showActivity': 'Show activity',
+      'settings.showActivityHint': 'Keep the activity / stall text in the capsule',
+      'settings.blockFadeMs': 'Block fade duration',
+      'settings.caretPeriodMs': 'Caret breathing period',
+      'settings.settleMs': 'Settle fade duration',
+      'settings.stallMs': 'Stall threshold',
+      'settings.logLevel': 'Log level',
+      'settings.logLevelHint': 'A valid config stays silent at the default level',
+      'settings.reset': 'Reset',
+      'settings.resetHint': 'Clear this browser\u2019s overrides',
+      'settings.footHint': 'Changes apply immediately; edit the profile cordis.patch.yml to change the defaults for every browser.',
+      'settings.range': '{min}–{max} ms',
+      'settings.loading': 'Reading version…',
+      'settings.version': 'Version {version}',
+      'settings.commit': 'Commit {commit}',
+      'settings.badgeLocal': 'Changed in this browser',
+      'preview.title': 'Preview',
+      'preview.replay': 'Replay',
+      'preview.hint': 'This snippet replays with the current settings; every control changes it immediately.',
+      'preview.settled': 'A paragraph already on screen never replays its animation.',
+      'preview.fading': 'A new paragraph fades in over {ms}ms.',
+      'preview.caret': 'The last line carries the breathing caret',
+      'preview.off': 'Decoration is off. Turn the master switch on to see the preview.',
+      'preview.noCapsule': 'The run capsule is off.',
+      'preview.phase': 'Writing reply',
+      'preview.elapsed': '00:12',
+      'preview.activity': 'active <2s ago',
+      update: 'Online upgrade',
+      'update.title': 'Online upgrade',
+      'update.intro': 'Fast-forwards the checkout from the git remote. Refuses a dirty or diverged work tree, and rolls back on failure.',
+      'update.check': 'Check for updates',
+      'update.apply': 'Upgrade now',
+      'update.checking': 'Checking…',
+      'update.upgrading': 'Upgrading…',
+      'update.uptodate': 'Up to date: {version}',
+      'update.available': 'Update available: {version}, {n} commit(s) behind',
+      'update.upgraded': 'Upgraded to {version} ({commit}); reloading…',
+      'update.reloading': 'Reloading the plugin…',
+      'update.restart': 'Upgraded, but the Host module needs a dsh restart',
+      'update.failed': 'Upgrade failed',
+      'update.noStats': 'The Host half exposed no upgrade route',
+      'update.current': 'Current',
+      'update.latest': 'Remote',
     }
 
     /**
@@ -412,6 +631,7 @@ window.__ModuleLoader__.load({
 
     /** The compact phase capsule rendered above the composer while running. */
     function RunStrip({ session, t }) {
+      const settings = useSettings()
       const [, setVersion] = React.useState(0)
 
       React.useEffect(() => runStore.subscribe(() => setVersion((value) => value + 1)), [])
@@ -422,6 +642,7 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => () => runStore.stop(), [])
 
+      if (!settings.enabled || !settings.runStrip) return null
       if (session === undefined || !session.running || !runStore.running || runStore.sessionId !== session.sessionId) return null
 
       const now = Date.now()
@@ -502,12 +723,12 @@ window.__ModuleLoader__.load({
       + 'background:linear-gradient(180deg,currentColor 15%,color-mix(in srgb,currentColor 30%,transparent));'
 
     /**
-     * Build the stylesheet for one settings snapshot.
+     * Build the decoration stylesheet for one settings snapshot.
      *
      * A disabled feature contributes no rule at all, so the browser never even
      * parses the animation it was told to skip. Durations come straight from
      * the resolved config.
-     * @param {Record<string, unknown>} s - resolved settings.
+     * @param {Record<string, unknown>} s - current settings.
      * @returns {string} the stylesheet text ('' when every surface is off).
      */
     function buildCss(s) {
@@ -566,113 +787,539 @@ window.__ModuleLoader__.load({
       return parts.join('')
     }
 
-    /** Stylesheet for the resolved settings. */
-    const CSS = buildCss(settings)
+    /** Settings-page styles; mounted whether or not the decoration is enabled. */
+    const PAGE_CSS = [
+      '.dshSPS_page{display:flex;flex-direction:column;gap:14px;max-width:640px;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_head{display:flex;flex-direction:column;gap:4px}',
+      '.dshSPS_title{margin:0;font-size:15px;font-weight:600;line-height:22px}',
+      '.dshSPS_intro{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
+      '.dshSPS_meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:11px;line-height:20px;color:var(--dsw-alias-state-warn-primary);border:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,transparent)}',
+      '.dshSPS_group{display:flex;flex-direction:column;gap:2px}',
+      '.dshSPS_groupTitle{margin:0;padding-top:6px;font-size:12px;font-weight:600;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_rows{display:flex;flex-direction:column;border-top:.5px solid var(--dsw-alias-border-l2)}',
+      '.dshSPS_row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:12px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}',
+      '.dshSPS_rowText{display:flex;flex-direction:column;gap:4px;min-width:0}',
+      '.dshSPS_rowTitle{font-size:14px;line-height:20px}',
+      '.dshSPS_rowHint{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}',
+      '.dshSPS_rowControl{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:none;min-width:0}',
+
+      '.dshSPS_switch{position:relative;flex:none;width:36px;height:20px;padding:0;border:0;border-radius:999px;background:var(--dsw-alias-border-l2);appearance:none;cursor:pointer;transition:background-color .16s ease}',
+      '.dshSPS_switch[data-on=true]{background:var(--dsw-alias-brand-primary)}',
+      '.dshSPS_knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.28);transition:transform .16s ease}',
+      '.dshSPS_switch[data-on=true] .dshSPS_knob{transform:translateX(16px)}',
+      '.dshSPS_switch:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}',
+
+      '.dshSPS_seg{display:inline-flex;gap:2px;padding:2px;border:.5px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_segBtn{height:24px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;font-weight:500;line-height:24px;white-space:nowrap;cursor:pointer}',
+      '.dshSPS_segBtn:hover{color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_segBtn[data-active=true]{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px color-mix(in srgb,var(--dsw-alias-label-primary) 12%,transparent)}',
+      '.dshSPS_segBtn:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:-1px}',
+
+      '.dshSPS_num{display:inline-flex;align-items:center;gap:6px}',
+      '.dshSPS_input{box-sizing:border-box;width:88px;height:28px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}',
+      '.dshSPS_input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}',
+      '.dshSPS_input[aria-invalid=true]{border-color:var(--dsw-alias-state-error-primary)}',
+      '.dshSPS_unit{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+
+      '.dshSPS_foot{display:flex;flex-wrap:wrap;align-items:center;gap:12px}',
+      '.dshSPS_button{height:28px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:26px;cursor:pointer}',
+      '.dshSPS_button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_button:disabled{opacity:.45;cursor:default}',
+      '.dshSPS_button:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}',
+      '.dshSPS_button[data-primary=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}',
+      '.dshSPS_footHint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
+
+      '.dshSPS_card{display:flex;flex-direction:column;gap:10px;padding:12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_cardHead{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}',
+      '.dshSPS_cardTitle{font-size:13px;font-weight:600;line-height:20px;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_cardNote{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_pair{display:flex;flex-wrap:wrap;gap:18px}',
+      '.dshSPS_pairItem{display:flex;flex-direction:column;gap:2px;min-width:0}',
+      '.dshSPS_pairKey{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_pairValue{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}',
+      '.dshSPS_status{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_status[data-tone=error]{color:var(--dsw-alias-state-error-primary)}',
+      '.dshSPS_status[data-tone=ok]{color:var(--dsw-alias-state-success-primary)}',
+      '.dshSPS_status[data-tone=busy]{color:var(--dsw-alias-label-tertiary)}',
+
+      '.dshSPS_preview{display:flex;flex-direction:column;gap:10px;padding:12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_previewBar{display:flex;align-items:center;gap:10px}',
+      '.dshSPS_previewTag{font-size:12px;font-weight:600;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_previewHint{margin-left:auto;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);text-align:right}',
+      '.dshSPS_previewBar .dshSPS_button{margin-left:auto}',
+      '.dshSPS_previewStage{display:flex;flex-direction:column;gap:6px;padding-top:2px}',
+      '.dshSPS_demoLine{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_demoLine.dshSPS_demoIn{color:var(--dsw-alias-label-primary);animation:dshSPS_in var(--dshSPS-fade,160ms) cubic-bezier(.2,.7,.3,1)}',
+      '.dshSPS_demoLine.dshSPS_demoIn[data-fade=false]{animation:none}',
+      '.dshSPS_demoCaret{display:inline-block;width:2px;height:1.05em;margin:0 -1px 0 3px;border-radius:1px;vertical-align:-.16em;',
+      'background:linear-gradient(180deg,currentColor 15%,color-mix(in srgb,currentColor 30%,transparent));',
+      'animation:dshSPS_breath var(--dshSPS-period,1200ms) ease-in-out infinite}',
+      '.dshSPS_previewNote{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_previewEmpty{display:flex;align-items:center;justify-content:center;min-height:44px;border:.5px dashed var(--dsw-alias-border-l2);border-radius:6px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-align:center;padding:0 10px}',
+      '.dshSPS_demoPill{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;max-width:100%;height:26px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:12px;',
+      'color:var(--dsw-alias-label-tertiary);background:color-mix(in srgb,var(--dsw-alias-bg-base) 88%,transparent)}',
+      '.dshSPS_demoPillDot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dsw-alias-state-business-primary);animation:dshSPS_pulse 1.8s ease-in-out infinite}',
+      '.dshSPS_demoPillPhase{color:var(--dsw-alias-label-secondary);font-weight:500}',
+      '.dshSPS_demoPillSep{color:var(--dsw-alias-separator-primary)}',
+      '@keyframes dshSPS_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}',
+      '@keyframes dshSPS_breath{0%,100%{opacity:.95}50%{opacity:.78}}',
+      '@keyframes dshSPS_pulse{0%,100%{opacity:1}50%{opacity:.45}}',
+      '@media (prefers-reduced-motion:reduce){.dshSPS_demoLine.dshSPS_demoIn,.dshSPS_demoCaret,.dshSPS_demoPillDot{animation:none}}',
+      '@media (max-width:560px){.dshSPS_row{flex-wrap:wrap;gap:10px}.dshSPS_previewHint{display:none}}',
+      '@media (prefers-reduced-motion:reduce){.dshSPS_switch,.dshSPS_knob{transition:none}}',
+    ].join('')
 
     /**
-     * Mount the stylesheet, the settle observer, the run observer, and the
-     * composer capsule for as long as this plugin runs.
-     * @param ctx - Client context owning the contribution.
+     * Label + hint column shared by every settings row.
+     * @param {{ title: string, hint: string, children: object }} props - copy and the control.
+     * @returns {object} the row element.
      */
-    function apply(ctx) {
-      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'stream-polish: dictionaries')
+    function SettingsRow(props) {
+      return h('div', { className: 'dshSPS_row' },
+        h('div', { className: 'dshSPS_rowText' },
+          h('span', { className: 'dshSPS_rowTitle' }, props.title),
+          h('span', { className: 'dshSPS_rowHint' }, props.hint)),
+        h('div', { className: 'dshSPS_rowControl' }, props.children))
+    }
 
-      // `enabled: false` keeps the row loaded and public (so a patch edit or a
-      // localStorage override can turn it back on after a reload) but mounts
-      // nothing at all.
-      if (!settings.enabled) {
-        logAt('info', 'info', 'disabled by configuration; no surface mounted')
-        return
+    /**
+     * Accessible on/off switch.
+     * @param {{ checked: boolean, label: string, disabled?: boolean, onChange: (next: boolean) => void }} props - switch state.
+     * @returns {object} the switch element.
+     */
+    function SettingsSwitch(props) {
+      return h('button', {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': props.checked ? 'true' : 'false',
+        'aria-label': props.label,
+        className: 'dshSPS_switch',
+        'data-on': props.checked ? 'true' : 'false',
+        disabled: props.disabled === true ? true : undefined,
+        onClick: () => props.onChange(!props.checked),
+      }, h('span', { className: 'dshSPS_knob', 'aria-hidden': true }))
+    }
+
+    /**
+     * One-choice segmented control.
+     * @param {{ group: string, label: string, value: string, ids: readonly string[], t: Function, onChange: (id: string) => void }} props - control state.
+     * @returns {object} the control element.
+     */
+    function SettingsSegments(props) {
+      return h('div', { className: 'dshSPS_seg', role: 'group', 'aria-label': props.label },
+        props.ids.map((id) => h('button', {
+          key: id,
+          type: 'button',
+          className: 'dshSPS_segBtn',
+          'data-active': props.value === id ? 'true' : undefined,
+          'aria-pressed': props.value === id ? 'true' : 'false',
+          onClick: () => props.onChange(id),
+        }, props.labelFor(id))))
+    }
+
+    /**
+     * Integer field with the option's own bounds; an out-of-range draft keeps
+     * the input marked invalid and never reaches the store.
+     * @param {{ option: string, value: number, t: Function, onChange: (next: number) => void }} props - field state.
+     * @returns {object} the field element.
+     */
+    function SettingsNumber(props) {
+      const rule = SPEC[props.option]
+      const [draft, setDraft] = React.useState(String(props.value))
+      React.useEffect(() => {
+        setDraft(String(props.value))
+      }, [props.value])
+      const parsed = Number(draft)
+      const valid = draft.trim() !== '' && Number.isInteger(parsed) && parsed >= rule.min && parsed <= rule.max
+      return h('span', { className: 'dshSPS_num' },
+        h('input', {
+          className: 'dshSPS_input',
+          type: 'number',
+          inputMode: 'numeric',
+          min: rule.min,
+          max: rule.max,
+          step: 1,
+          value: draft,
+          'aria-label': props.t('settings.' + props.option),
+          'aria-invalid': valid ? undefined : 'true',
+          onChange: (event) => {
+            const next = event.target.value
+            setDraft(next)
+            const number = Number(next)
+            if (next.trim() !== '' && Number.isInteger(number) && number >= rule.min && number <= rule.max) {
+              props.onChange(number)
+            }
+          },
+          onBlur: () => {
+            if (!valid) setDraft(String(props.value))
+          },
+        }),
+        h('span', { className: 'dshSPS_unit' }, 'ms'))
+    }
+
+    /**
+     * Fetch one function off the Host half's route table and return its JSON.
+     * @param {string} path - path under `/api/stream-polish`.
+     * @param {string} [method] - HTTP method.
+     * @returns {Promise<object>} the parsed body, or an error envelope.
+     */
+    async function apiCall(path, method = 'GET') {
+      if (typeof fetch !== 'function') {
+        return { ok: false, error: 'no-fetch', message: 'fetch is unavailable in this browser' }
+      }
+      try {
+        const response = await fetch('./api/stream-polish' + path, {
+          method,
+          headers: method === 'POST' ? { 'content-type': 'application/json' } : undefined,
+          body: method === 'POST' ? '{}' : undefined,
+          credentials: 'same-origin',
+        })
+        if (response.status === 404) {
+          return { ok: false, error: 'no-route', message: 'Host half exposed no route for ' + path }
+        }
+        return await response.json()
+      } catch (error) {
+        return { ok: false, error: 'network', message: String(error) }
+      }
+    }
+
+    /** The one-click Git upgrade card: version facts, check, upgrade. */
+    function UpdatePanel({ t }) {
+      const [phase, setPhase] = React.useState({
+        busy: null,
+        info: null,
+        status: null,
+        message: null,
+        tone: null,
+      })
+
+      const patch = (next) => setPhase((current) => ({ ...current, ...next }))
+
+      React.useEffect(() => {
+        let alive = true
+        void apiCall('/info').then((info) => {
+          if (!alive) return
+          patch(info.ok === true ? { info } : { message: info.message ?? t('update.failed'), tone: 'error' })
+        })
+        return () => {
+          alive = false
+        }
+      }, [])
+
+      const check = async () => {
+        patch({ busy: 'check', message: null, tone: null })
+        const status = await apiCall('/update')
+        if (status.ok === false) {
+          patch({ busy: null, status: null, message: status.message ?? t('update.failed'), tone: 'error' })
+          return
+        }
+        patch({
+          busy: null,
+          status,
+          tone: status.available ? null : 'ok',
+          message: status.available
+            ? t('update.available', { version: status.latestVersion ?? '?', n: status.behind })
+            : t('update.uptodate', { version: status.version ?? '?' }),
+        })
       }
 
-      const settleEnabled = settings.caret && settings.settleFade
-      const cleanupMs = settings.settleMs + 80
+      const upgrade = async () => {
+        patch({ busy: 'apply', message: t('update.upgrading'), tone: 'busy' })
+        const result = await apiCall('/update/apply', 'POST')
+        if (result.ok === false) {
+          patch({ busy: null, message: result.message ?? t('update.failed'), tone: 'error' })
+          return
+        }
+        if (result.changed === false) {
+          patch({ busy: null, message: result.message ?? t('update.uptodate', { version: result.version ?? '?' }), tone: 'ok' })
+          return
+        }
+        const target = result.to ?? {}
+        const next = result.reload === 'restart-required'
+          ? t('update.restart')
+          : t('update.upgraded', { version: target.version ?? '?', commit: target.shortCommit ?? '?' })
+        patch({ busy: null, message: next, tone: result.reload === 'restart-required' ? 'error' : 'ok' })
+        if (result.reload !== 'restart-required') {
+          // The Host half recomposes itself ~0.6s after the response; give the
+          // new client module a beat, then reload so both halves agree.
+          window.setTimeout(() => {
+            if (typeof window.location?.reload === 'function') window.location.reload()
+          }, 1600)
+        }
+      }
 
-      ctx.effect(() => {
-        const style = document.createElement('style')
-        style.dataset.plugin = '@local/stream-polish'
-        style.textContent = CSS
-        document.head.appendChild(style)
+      const info = phase.info
+      const status = phase.status
+      return h('div', { className: 'dshSPS_card' },
+        h('div', { className: 'dshSPS_cardHead' },
+          h('span', { className: 'dshSPS_cardTitle' }, t('update.title')),
+          h('span', { className: 'dshSPS_cardNote' }, info === null
+            ? t('settings.loading')
+            : [t('settings.version', { version: info.version ?? '?' }), info.shortCommit === undefined ? null : t('settings.commit', { commit: info.shortCommit })].filter(Boolean).join(' · '))),
+        h('div', { className: 'dshSPS_pair' },
+          h('div', { className: 'dshSPS_pairItem' },
+            h('span', { className: 'dshSPS_pairKey' }, t('update.current')),
+            h('span', { className: 'dshSPS_pairValue' }, (status ?? info) === null
+              ? '—'
+              : ((status ?? info).commit ?? '').slice(0, 7) + ' · ' + ((status ?? info).version ?? '?'))),
+          h('div', { className: 'dshSPS_pairItem' },
+            h('span', { className: 'dshSPS_pairKey' }, t('update.latest')),
+            h('span', { className: 'dshSPS_pairValue' }, status === null || status.ok === false
+              ? '—'
+              : (status.latestShortCommit ?? '—') + ' · ' + (status.latestVersion ?? '?')))),
+        phase.message === null ? null : h('div', {
+          className: 'dshSPS_status',
+          'data-tone': phase.tone ?? undefined,
+        }, phase.message),
+        h('div', { className: 'dshSPS_foot' },
+          h('button', {
+            type: 'button',
+            className: 'dshSPS_button',
+            disabled: phase.busy !== null,
+            onClick: () => void check(),
+          }, phase.busy === 'check' ? t('update.checking') : t('update.check')),
+          h('button', {
+            type: 'button',
+            className: 'dshSPS_button',
+            'data-primary': 'true',
+            disabled: phase.busy !== null || status === null || status.ok === false || status.available !== true,
+            onClick: () => void upgrade(),
+          }, phase.busy === 'apply' ? t('update.upgrading') : t('update.apply'))),
+      )
+    }
 
-        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-        /** @type {Map<HTMLElement, number>} */
-        const timers = new Map()
+    /**
+     * A miniature transcript that replays with the current settings.
+     *
+     * Every control writes the store, the page re-renders, and this snippet
+     * shows the consequence immediately: the fade duration, the caret period,
+     * whether the caret and the capsule exist at all, and which capsule
+     * segments survive. Replaying bumps a key so React remounts the snippet and
+     * the entry animation runs again.
+     */
+    function PreviewPanel(props) {
+      const settings = props.settings
+      const t = props.t
+      const [cycle, setCycle] = React.useState(0)
+      const stageStyle = {
+        '--dshSPS-fade': settings.blockFadeMs + 'ms',
+        '--dshSPS-period': settings.caretPeriodMs + 'ms',
+      }
+      const capsule = settings.runStrip
+        ? h('div', { className: 'dshSPS_demoPill' },
+          h('span', { className: 'dshSPS_demoPillDot' }),
+          h('span', { className: 'dshSPS_demoPillPhase' }, t('preview.phase')),
+          settings.showElapsed
+            ? h('span', { className: 'dshSPS_demoPillSep', key: 'sep1' }, '·')
+            : null,
+          settings.showElapsed ? h('span', { key: 'elapsed' }, t('preview.elapsed')) : null,
+          settings.showActivity
+            ? h('span', { className: 'dshSPS_demoPillSep', key: 'sep2' }, '·')
+            : null,
+          settings.showActivity ? h('span', { key: 'activity' }, t('preview.activity')) : null)
+        : h('div', { className: 'dshSPS_previewNote' }, t('preview.noCapsule'))
 
-        /** Forget a pending cleanup and drop any in-flight settle state. */
-        const begin = (root) => {
-          const timer = timers.get(root)
-          if (timer !== undefined) {
-            window.clearTimeout(timer)
-            timers.delete(root)
-          }
+      return h('div', { className: 'dshSPS_preview' },
+        h('div', { className: 'dshSPS_previewBar' },
+          h('span', { className: 'dshSPS_previewTag' }, t('preview.title')),
+          h('span', { className: 'dshSPS_previewHint' }, t('preview.hint')),
+          h('button', {
+            type: 'button',
+            className: 'dshSPS_button',
+            disabled: !settings.enabled,
+            onClick: () => setCycle((value) => value + 1),
+          }, t('preview.replay'))),
+        settings.enabled
+          ? h('div', { className: 'dshSPS_previewStage', key: cycle, style: stageStyle },
+            h('p', { className: 'dshSPS_demoLine' }, t('preview.settled')),
+            h('p', {
+              className: 'dshSPS_demoLine dshSPS_demoIn',
+              'data-fade': settings.blockFade ? 'true' : 'false',
+            }, t('preview.fading', { ms: settings.blockFadeMs })),
+            h('p', { className: 'dshSPS_demoLine' },
+              t('preview.caret'),
+              settings.caret ? h('span', { className: 'dshSPS_demoCaret', 'aria-hidden': true }) : null),
+            capsule)
+          : h('div', { className: 'dshSPS_previewEmpty' }, t('preview.off')))
+    }
+
+    /** The Stream polish page inside Settings -> Plugins. */
+    function SettingsPage(props) {
+      const settings = useSettings()
+      const t = typeof props.t === 'function' ? props.t : translate
+      const update = (patch) => store.update(patch)
+      const toggle = (key) => h(SettingsSwitch, {
+        checked: settings[key],
+        label: t('settings.' + key),
+        onChange: (next) => update({ [key]: next }),
+      })
+      const number = (key) => h(SettingsNumber, {
+        option: key,
+        value: settings[key],
+        t,
+        onChange: (next) => update({ [key]: next }),
+      })
+
+      try {
+        return renderPage()
+      } catch (error) {
+        // A crash here would blank the slot entry with only a console line, so
+        // show the failure in place instead.
+        return h('div', { className: 'dshSPS_page' },
+          h('p', { className: 'dshSPS_status', 'data-tone': 'error' },
+            'settings page failed: ' + (error instanceof Error ? error.message : String(error))))
+      }
+
+      function renderPage() {
+        return h('div', { className: 'dshSPS_page' },
+        h('div', { className: 'dshSPS_head' },
+          h('h3', { className: 'dshSPS_title' }, t('settings.title')),
+          h('p', { className: 'dshSPS_intro' }, t('settings.intro')),
+          h('div', { className: 'dshSPS_meta' },
+            store.isDefault() ? null : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal')))),
+
+        h(PreviewPanel, { settings, t }),
+
+        h(UpdatePanel, { t }),
+
+        h('div', { className: 'dshSPS_group' },
+          h('h4', { className: 'dshSPS_groupTitle' }, t('settings.display')),
+          h('div', { className: 'dshSPS_rows' },
+            h(SettingsRow, { title: t('settings.enabled'), hint: t('settings.enabledHint') }, toggle('enabled')),
+            h(SettingsRow, { title: t('settings.blockFade'), hint: t('settings.blockFadeHint') }, toggle('blockFade')),
+            h(SettingsRow, { title: t('settings.caret'), hint: t('settings.caretHint') }, toggle('caret')),
+            h(SettingsRow, { title: t('settings.settleFade'), hint: t('settings.settleFadeHint') }, toggle('settleFade')),
+            h(SettingsRow, { title: t('settings.runStrip'), hint: t('settings.runStripHint') }, toggle('runStrip')),
+            h(SettingsRow, { title: t('settings.showElapsed'), hint: t('settings.showElapsedHint') }, toggle('showElapsed')),
+            h(SettingsRow, { title: t('settings.showActivity'), hint: t('settings.showActivityHint') }, toggle('showActivity')))),
+
+        h('div', { className: 'dshSPS_group' },
+          h('h4', { className: 'dshSPS_groupTitle' }, t('settings.timing')),
+          h('div', { className: 'dshSPS_rows' },
+            h(SettingsRow, { title: t('settings.blockFadeMs'), hint: t('settings.range', { min: SPEC.blockFadeMs.min, max: SPEC.blockFadeMs.max }) }, number('blockFadeMs')),
+            h(SettingsRow, { title: t('settings.caretPeriodMs'), hint: t('settings.range', { min: SPEC.caretPeriodMs.min, max: SPEC.caretPeriodMs.max }) }, number('caretPeriodMs')),
+            h(SettingsRow, { title: t('settings.settleMs'), hint: t('settings.range', { min: SPEC.settleMs.min, max: SPEC.settleMs.max }) }, number('settleMs')),
+            h(SettingsRow, { title: t('settings.stallMs'), hint: t('settings.range', { min: SPEC.stallMs.min, max: SPEC.stallMs.max }) }, number('stallMs')))),
+
+        h('div', { className: 'dshSPS_group' },
+          h('h4', { className: 'dshSPS_groupTitle' }, t('settings.log')),
+          h('div', { className: 'dshSPS_rows' },
+            h(SettingsRow, { title: t('settings.logLevel'), hint: t('settings.logLevelHint') },
+              h(SettingsSegments, {
+                group: 'logLevel',
+                label: t('settings.logLevel'),
+                ids: LOG_LEVELS,
+                value: settings.logLevel,
+                t,
+                labelFor: (id) => id,
+                onChange: (next) => update({ logLevel: next }),
+              })))),
+
+        h('div', { className: 'dshSPS_foot' },
+          h('button', {
+            type: 'button',
+            className: 'dshSPS_button',
+            disabled: store.isDefault(),
+            onClick: () => store.reset(),
+          }, t('settings.reset')),
+          h('span', { className: 'dshSPS_footHint' }, t('settings.footHint'))))
+      }
+    }
+
+    /**
+     * Mount the decoration stylesheet and the observers it needs.
+     * @param {Record<string, unknown>} s - settings snapshot.
+     * @returns {{ dispose: () => void }} the teardown.
+     */
+    function mountSurfaces(s) {
+      const style = document.createElement('style')
+      style.dataset.plugin = '@local/stream-polish'
+      style.textContent = buildCss(s)
+      document.head.appendChild(style)
+
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+      /** @type {Map<HTMLElement, number>} */
+      const timers = new Map()
+
+      /** Forget a pending cleanup and drop any in-flight settle state. */
+      const begin = (root) => {
+        const timer = timers.get(root)
+        if (timer !== undefined) {
+          window.clearTimeout(timer)
+          timers.delete(root)
+        }
+        root.removeAttribute(SETTLE_ATTR)
+      }
+
+      const cleanupMs = s.settleMs + 80
+
+      /** Keep the caret mounted long enough to fade after the reply settles. */
+      const settle = (root) => {
+        if (reducedMotion.matches) return
+        if (root.querySelector(CARET_TARGET) === null) return
+        begin(root)
+        root.setAttribute(SETTLE_ATTR, '')
+        timers.set(root, window.setTimeout(() => {
+          timers.delete(root)
           root.removeAttribute(SETTLE_ATTR)
-        }
+        }, cleanupMs))
+      }
 
-        /** Keep the caret mounted long enough to fade after the reply settles. */
-        const settle = (root) => {
-          if (reducedMotion.matches) return
-          if (root.querySelector(CARET_TARGET) === null) return
-          begin(root)
-          root.setAttribute(SETTLE_ATTR, '')
-          timers.set(root, window.setTimeout(() => {
-            timers.delete(root)
-            root.removeAttribute(SETTLE_ATTR)
-          }, cleanupMs))
-        }
+      let settleObserver = null
+      if (s.caret && s.settleFade) {
+        settleObserver = new MutationObserver((records) => {
+          for (const record of records) {
+            if (record.attributeName !== 'data-streaming') continue
+            const root = record.target
+            if (!(root instanceof HTMLElement)) continue
+            if (root.hasAttribute('data-streaming')) begin(root)
+            else settle(root)
+          }
+        })
+        settleObserver.observe(document.documentElement, {
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['data-streaming'],
+        })
+      }
 
-        let settleObserver = null
-        if (settleEnabled) {
-          settleObserver = new MutationObserver((records) => {
-            for (const record of records) {
-              if (record.attributeName !== 'data-streaming') continue
-              const root = record.target
-              if (!(root instanceof HTMLElement)) continue
-              if (root.hasAttribute('data-streaming')) begin(root)
-              else settle(root)
+      let runObserver = null
+      if (s.runStrip) {
+        runObserver = new MutationObserver((records) => {
+          let phaseDirty = false
+          for (const record of records) {
+            const target = record.target
+            const el = target.nodeType === 1 ? target : target.parentElement
+            if (el === null || el === undefined) continue
+            if (el.closest('[data-chat-flow]') === null) continue
+            if (el.closest('[data-chat-running]') !== null) continue
+            if (el.closest('[data-shimmer]') !== null) continue
+            if (record.type === 'characterData') {
+              const text = (target.data ?? '').trim()
+              if (/^\d+(?:\.\d+)?[smh]?(?:\s+\d+(?:\.\d+)?[smh]?)*$/.test(text)) continue
+              if (el.closest('[data-streaming],[data-tool]') !== null) runStore.touch()
+            } else if (record.type === 'childList') {
+              runStore.touch()
+              phaseDirty = true
+            } else if (record.type === 'attributes') {
+              runStore.touch()
+              phaseDirty = true
             }
-          })
-          settleObserver.observe(document.documentElement, {
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['data-streaming'],
-          })
-        }
+          }
+          if (phaseDirty) runStore.syncPhase()
+        })
+        runObserver.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ['data-state', 'data-streaming'],
+        })
+      }
 
-        let runObserver = null
-        if (settings.runStrip) {
-          runObserver = new MutationObserver((records) => {
-            let phaseDirty = false
-            for (const record of records) {
-              const target = record.target
-              const el = target.nodeType === 1 ? target : target.parentElement
-              if (el === null || el === undefined) continue
-              if (el.closest('[data-chat-flow]') === null) continue
-              if (el.closest('[data-chat-running]') !== null) continue
-              if (el.closest('[data-shimmer]') !== null) continue
-              if (record.type === 'characterData') {
-                const text = (target.data ?? '').trim()
-                if (/^\d+(?:\.\d+)?[smh]?(?:\s+\d+(?:\.\d+)?[smh]?)*$/.test(text)) continue
-                if (el.closest('[data-streaming],[data-tool]') !== null) runStore.touch()
-              } else if (record.type === 'childList') {
-                runStore.touch()
-                phaseDirty = true
-              } else if (record.type === 'attributes') {
-                runStore.touch()
-                phaseDirty = true
-              }
-            }
-            if (phaseDirty) runStore.syncPhase()
-          })
-          runObserver.observe(document.documentElement, {
-            subtree: true,
-            childList: true,
-            characterData: true,
-            attributes: true,
-            attributeFilter: ['data-state', 'data-streaming'],
-          })
-        }
-
-        return () => {
+      return {
+        dispose() {
           if (settleObserver !== null) settleObserver.disconnect()
           if (runObserver !== null) runObserver.disconnect()
           runStore.stop()
@@ -682,17 +1329,71 @@ window.__ModuleLoader__.load({
             root.removeAttribute(SETTLE_ATTR)
           }
           style.remove()
-        }
-      }, 'stream-polish: styles and observers')
-
-      if (settings.runStrip) {
-        ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-          name: 'conversation.input.dock',
-          id: 'run-strip',
-          order: 0,
-          locale: NS,
-        }, RunStrip))
+        },
       }
+    }
+
+    /**
+     * Mount every contribution for as long as this plugin runs.
+     * @param ctx - Client context owning the contributions.
+     */
+    function apply(ctx) {
+      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'stream-polish: dictionaries')
+
+      const bound = typeof ctx.locale.bind === 'function' ? ctx.locale.bind(NS) : (key) => key
+      translate = bound
+
+      // The settings page must survive `enabled: false` — that is how a user
+      // turns the decoration back on — so its stylesheet is mounted separately
+      // from the decoration's.
+      ctx.effect(() => {
+        const element = document.createElement('style')
+        element.dataset.pluginPage = '@local/stream-polish'
+        element.textContent = PAGE_CSS
+        document.head.appendChild(element)
+        return () => element.remove()
+      }, 'stream-polish: settings styles')
+
+      ctx.effect(() => {
+        let surface = null
+        const sync = () => {
+          if (surface !== null) {
+            surface.dispose()
+            surface = null
+          }
+          const current = store.get()
+          logAt('debug', 'debug', 'applying settings ' + JSON.stringify(current))
+          if (current.enabled) surface = mountSurfaces(current)
+        }
+        sync()
+        const unsubscribe = store.subscribe(sync)
+        return () => {
+          unsubscribe()
+          if (surface !== null) surface.dispose()
+          surface = null
+        }
+      }, 'stream-polish: surfaces')
+
+      ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+        name: 'conversation.input.dock',
+        id: 'run-strip',
+        order: 0,
+        locale: NS,
+      }, RunStrip))
+
+      ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+        name: 'settings.plugins.tab',
+        id: 'stream-polish',
+        order: 15,
+        locale: NS,
+        label: () => {
+          try {
+            return bound('tab')
+          } catch {
+            return 'Stream polish'
+          }
+        },
+      }, SettingsPage))
     }
 
     return { inject: ['slots', 'locale'], apply, name: 'stream-polish' }

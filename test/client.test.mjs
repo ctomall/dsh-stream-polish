@@ -1,7 +1,8 @@
 // Client-half tests: the module runs inside a `node:vm` sandbox with stubbed
-// `window` / `document` / `MutationObserver`, so resolution, precedence,
-// validation parity, CSS generation and mount gating are all asserted without
-// a browser and without a dev dependency.
+// `window` / `document` / `MutationObserver` / `localStorage`, so resolution,
+// precedence, validation parity, CSS generation, live re-application and the
+// settings store are all asserted without a browser and without a dev
+// dependency.
 //
 //   node --test test/client.test.mjs
 
@@ -34,6 +35,11 @@ async function loadClient(sources = {}) {
   const styles = []
   const observers = []
   const calls = { create: 0 }
+  const storage = new Map(
+    sources.saved === undefined || typeof sources.saved !== 'object'
+      ? []
+      : [['dsh.stream-polish.settings', JSON.stringify(sources.saved)]],
+  )
 
   const push = (level) => (...args) => logs.push({ level, text: args.join(' ') })
 
@@ -46,7 +52,14 @@ async function loadClient(sources = {}) {
     documentElement: {},
     createElement() {
       calls.create += 1
-      return { dataset: {}, textContent: '', remove() {} }
+      return {
+        dataset: {},
+        textContent: '',
+        remove() {
+          const index = styles.indexOf(this)
+          if (index >= 0) styles.splice(index, 1)
+        },
+      }
     },
     querySelectorAll() {
       return []
@@ -65,7 +78,7 @@ async function loadClient(sources = {}) {
   }
 
   const sandbox = {
-    console: { warn: push('warn'), info: push('info'), debug: push('debug'), log: push('log') },
+    console: { warn: push('warn'), info: push('info'), debug: push('debug'), log: push('log'), error: push('error') },
     document,
     MutationObserver,
     HTMLElement: class {},
@@ -76,12 +89,15 @@ async function loadClient(sources = {}) {
         },
       },
       localStorage: {
-        getItem() {
-          if (sources.saved === undefined) return null
-          return typeof sources.saved === 'string' ? sources.saved : JSON.stringify(sources.saved)
+        getItem(key) {
+          return storage.has(key) ? storage.get(key) : null
         },
-        setItem() {},
-        removeItem() {},
+        setItem(key, value) {
+          storage.set(key, value)
+        },
+        removeItem(key) {
+          storage.delete(key)
+        },
       },
       matchMedia() {
         return { matches: false }
@@ -94,6 +110,7 @@ async function loadClient(sources = {}) {
         return 0
       },
       clearInterval() {},
+      location: { reload() {} },
     },
   }
   if (sources.wire !== undefined) sandbox.__DSH_STREAM_POLISH__ = sources.wire
@@ -112,7 +129,7 @@ async function loadClient(sources = {}) {
     throw new Error('unexpected require: ' + name)
   })
 
-  return { module, sandbox, logs, styles, observers, calls, document }
+  return { module, sandbox, logs, styles, observers, calls, storage }
 }
 
 /**
@@ -133,6 +150,9 @@ function applyClient(module) {
       register() {
         return () => {}
       },
+      bind() {
+        return (key) => key
+      },
     },
     slots: {
       inject(key, callback) {
@@ -149,9 +169,14 @@ function applyClient(module) {
   return { effects, injected, registrations }
 }
 
-/** The stylesheet text mounted by one `apply` call. */
+/** Only the decoration stylesheets (the settings page has its own). */
+function decorationStyles(load) {
+  return load.styles.filter((style) => style.dataset.plugin !== undefined)
+}
+
+/** The decoration stylesheet text mounted by one `apply` call. */
 function cssOf(load) {
-  return load.styles.map((style) => style.textContent).join('')
+  return decorationStyles(load).map((style) => style.textContent).join('')
 }
 
 test('the client mirror matches config.js exactly', async () => {
@@ -159,7 +184,7 @@ test('the client mirror matches config.js exactly', async () => {
   const mirror = sandbox.__DSH_STREAM_POLISH_CLIENT__
   assert.equal(mirror.version, 2)
   assert.deepEqual(plain(mirror.defaults), DEFAULTS)
-  assert.deepEqual(Object.keys(mirror.spec), Object.keys(SPEC))
+  assert.deepEqual(plain(Object.keys(mirror.spec)), Object.keys(SPEC))
   for (const key of Object.keys(SPEC)) {
     const expected = { type: SPEC[key].type, default: SPEC[key].default }
     if (SPEC[key].min !== undefined) expected.min = SPEC[key].min
@@ -169,15 +194,16 @@ test('the client mirror matches config.js exactly', async () => {
     if (mirror.spec[key].min !== undefined) actual.min = mirror.spec[key].min
     if (mirror.spec[key].max !== undefined) actual.max = mirror.spec[key].max
     if (mirror.spec[key].values !== undefined) actual.values = [...mirror.spec[key].values]
-    assert.deepEqual(actual, expected, key)
+    assert.deepEqual(plain(actual), expected, key)
   }
 })
 
 test('no configuration source means the previous release behaviour', async () => {
   const load = await loadClient()
-  const { settings, issues } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
-  assert.deepEqual(plain(settings), plain(DEFAULTS))
+  const { store, issues } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
+  assert.deepEqual(plain(store.get()), DEFAULTS)
   assert.deepEqual(plain(issues), [])
+  assert.equal(store.isDefault(), true)
   assert.deepEqual(load.logs, [], 'a valid default config stays silent at logLevel warn')
 })
 
@@ -185,11 +211,12 @@ test('the host row config overrides defaults', async () => {
   const { sandbox } = await loadClient({
     wire: { version: 2, config: { stallMs: 800, showElapsed: false, blockFadeMs: 240 } },
   })
-  const { settings } = sandbox.__DSH_STREAM_POLISH_CLIENT__
-  assert.equal(settings.stallMs, 800)
-  assert.equal(settings.showElapsed, false)
-  assert.equal(settings.blockFadeMs, 240)
-  assert.equal(settings.runStrip, true)
+  const { store } = sandbox.__DSH_STREAM_POLISH_CLIENT__
+  assert.equal(store.get().stallMs, 800)
+  assert.equal(store.get().showElapsed, false)
+  assert.equal(store.get().blockFadeMs, 240)
+  assert.equal(store.get().runStrip, true)
+  assert.equal(store.isDefault(), true, 'the row config is the baseline, not a local change')
 })
 
 test('this browser beats the host row, and the test hook beats both', async () => {
@@ -197,25 +224,25 @@ test('this browser beats the host row, and the test hook beats both', async () =
     wire: { version: 2, config: { stallMs: 800 } },
     saved: { stallMs: 4000 },
   })
-  assert.equal(saved.sandbox.__DSH_STREAM_POLISH_CLIENT__.settings.stallMs, 4000)
+  assert.equal(saved.sandbox.__DSH_STREAM_POLISH_CLIENT__.store.get().stallMs, 4000)
 
   const hook = await loadClient({
     wire: { version: 2, config: { stallMs: 800 } },
     saved: { stallMs: 4000 },
     hook: 900,
   })
-  assert.equal(hook.sandbox.__DSH_STREAM_POLISH_CLIENT__.settings.stallMs, 900)
+  assert.equal(hook.sandbox.__DSH_STREAM_POLISH_CLIENT__.store.get().stallMs, 900)
 })
 
 test('a wire payload from another version is ignored', async () => {
   const { sandbox } = await loadClient({ wire: { version: 1, config: { stallMs: 800 } } })
-  assert.equal(sandbox.__DSH_STREAM_POLISH_CLIENT__.settings.stallMs, DEFAULTS.stallMs)
+  assert.equal(sandbox.__DSH_STREAM_POLISH_CLIENT__.store.get().stallMs, DEFAULTS.stallMs)
 })
 
 test('an unusable saved override warns with the shared message and keeps the default', async () => {
   const load = await loadClient({ saved: { stallMs: 'fast' } })
-  const { settings, issues } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
-  assert.equal(settings.stallMs, DEFAULTS.stallMs)
+  const { store, issues } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
+  assert.equal(store.get().stallMs, DEFAULTS.stallMs)
   assert.equal(issues.length, 1)
   assert.equal(issues[0].message, issueMessage('stallMs', 'fast'))
   assert.equal(load.logs.length, 1)
@@ -223,9 +250,11 @@ test('an unusable saved override warns with the shared message and keeps the def
   assert.equal(load.logs[0].text, '[@local/stream-polish] ' + issueMessage('stallMs', 'fast'))
 })
 
-test('unreadable saved JSON is ignored without a thrown error', async () => {
-  const load = await loadClient({ saved: '{ not json' })
-  assert.deepEqual(plain(load.sandbox.__DSH_STREAM_POLISH_CLIENT__.settings), plain(DEFAULTS))
+test('an unreadable saved blob is ignored without a thrown error', async () => {
+  const load = await loadClient()
+  load.sandbox.window.localStorage.setItem('dsh.stream-polish.settings', '{ not json')
+  const { sandbox } = await loadClient()
+  assert.deepEqual(plain(sandbox.__DSH_STREAM_POLISH_CLIENT__.store.get()), plain(DEFAULTS))
 })
 
 test('logLevel silent suppresses diagnostics', async () => {
@@ -240,16 +269,18 @@ test('logLevel debug reports the resolved state', async () => {
   assert.ok(levels.includes('debug'))
 })
 
-test('the default mount installs one stylesheet, two observers, one slot', async () => {
+test('the default mount installs two stylesheets, two observers, two slots', async () => {
   const load = await loadClient()
   const mounted = applyClient(load.module)
-  assert.equal(load.styles.length, 1)
-  assert.equal(load.styles[0].dataset.plugin, '@local/stream-polish')
+  assert.equal(decorationStyles(load).length, 1, 'decoration stylesheet')
+  assert.equal(decorationStyles(load)[0].dataset.plugin, '@local/stream-polish')
+  assert.equal(load.styles.length, 2, 'plus the settings-page stylesheet')
   assert.equal(load.observers.length, 2, 'settle + run observers')
-  assert.deepEqual(mounted.injected, ['conversation.input.dock'])
-  assert.equal(mounted.registrations.length, 1)
+  assert.deepEqual(mounted.injected, ['conversation.input.dock', 'settings.plugins.tab'])
+  assert.equal(mounted.registrations.length, 2)
   assert.equal(mounted.registrations[0].options.id, 'run-strip')
-  assert.equal(mounted.effects.length, 2)
+  assert.equal(mounted.registrations[1].options.id, 'stream-polish')
+  assert.equal(mounted.effects.length, 3, 'dictionaries, page styles, surfaces')
 
   const css = cssOf(load)
   assert.ok(css.includes('animation:dshSP_blockIn 160ms'), 'block fade default')
@@ -280,12 +311,11 @@ test('blockFade: false contributes no block rule', async () => {
 
 test('caret: false drops the caret and its settle observer', async () => {
   const load = await loadClient({ wire: { version: 2, config: { caret: false } } })
-  const mounted = applyClient(load.module)
+  applyClient(load.module)
   const css = cssOf(load)
   assert.ok(!css.includes('dshSP_caret'))
   assert.ok(!css.includes('dshSP_caretOut'))
   assert.equal(load.observers.length, 1, 'only the run observer remains')
-  assert.equal(mounted.registrations.length, 1)
 })
 
 test('settleFade: false drops the fade but keeps the breathing caret', async () => {
@@ -298,23 +328,84 @@ test('settleFade: false drops the fade but keeps the breathing caret', async () 
   assert.equal(load.observers.length, 1)
 })
 
-test('runStrip: false drops the capsule, its observer and its slot', async () => {
+test('runStrip: false drops the capsule styles and its observer', async () => {
   const load = await loadClient({ wire: { version: 2, config: { runStrip: false } } })
-  const mounted = applyClient(load.module)
+  applyClient(load.module)
   const css = cssOf(load)
   assert.ok(!css.includes('dshRS'))
   assert.equal(load.observers.length, 1, 'only the settle observer remains')
-  assert.deepEqual(mounted.injected, [])
-  assert.equal(mounted.registrations.length, 0)
 })
 
-test('enabled: false mounts nothing at all', async () => {
+test('enabled: false mounts no decoration but keeps the settings page', async () => {
   const load = await loadClient({ wire: { version: 2, config: { enabled: false } } })
   const mounted = applyClient(load.module)
-  assert.equal(load.calls.create, 0, 'no style element created')
-  assert.equal(load.styles.length, 0)
+  assert.equal(decorationStyles(load).length, 0, 'no decoration stylesheet')
   assert.equal(load.observers.length, 0)
-  assert.deepEqual(mounted.injected, [])
-  assert.equal(mounted.registrations.length, 0)
-  assert.equal(mounted.effects.length, 1, 'the locale dictionary still registers')
+  assert.equal(load.styles.length, 1, 'the settings page still has its stylesheet')
+  assert.deepEqual(mounted.injected, ['conversation.input.dock', 'settings.plugins.tab'])
+  assert.equal(mounted.registrations.length, 2, 'the page must be reachable to switch it back on')
+})
+
+test('a store update re-applies immediately and persists the diff', async () => {
+  const load = await loadClient()
+  applyClient(load.module)
+  const { store } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
+  assert.equal(load.observers.length, 2)
+
+  const changed = store.update({ caret: false })
+  assert.equal(changed, true)
+  assert.equal(store.get().caret, false)
+  assert.ok(!cssOf(load).includes('dshSP_caret'), 'the caret rule is gone after the update')
+  assert.equal(load.observers.length, 3, 'the settle observer is gone, the run observer was re-created')
+  assert.equal(store.isDefault(), false)
+
+  const saved = JSON.parse(load.storage.get('dsh.stream-polish.settings'))
+  assert.deepEqual(saved, { caret: false }, 'only the changed key is persisted')
+})
+
+test('store.update rejects unusable values without touching the store', async () => {
+  const load = await loadClient()
+  applyClient(load.module)
+  const { store } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
+  assert.equal(store.update({ stallMs: 1 }), false)
+  assert.equal(store.update({ stallMs: 'fast' }), false)
+  assert.equal(store.update({ nope: true }), false)
+  assert.equal(store.get().stallMs, DEFAULTS.stallMs)
+  assert.equal(load.storage.has('dsh.stream-polish.settings'), false)
+})
+
+test('store.reset returns to the row config and clears the saved layer', async () => {
+  const load = await loadClient({ wire: { version: 2, config: { stallMs: 800 } } })
+  applyClient(load.module)
+  const { store } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
+  store.update({ stallMs: 4000, showActivity: false })
+  assert.equal(store.get().stallMs, 4000)
+
+  store.reset()
+  assert.equal(store.get().stallMs, 800, 'the row config survives a reset')
+  assert.equal(store.get().showActivity, true)
+  assert.equal(store.isDefault(), true)
+  assert.equal(load.storage.has('dsh.stream-polish.settings'), false)
+})
+
+test('a settings change rebuilds the stylesheet instead of stacking one', async () => {
+  const load = await loadClient()
+  applyClient(load.module)
+  const { store } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
+  store.update({ blockFadeMs: 200 })
+  store.update({ blockFadeMs: 300 })
+  assert.equal(decorationStyles(load).length, 1, 'one decoration stylesheet at a time')
+  assert.ok(cssOf(load).includes('dshSP_blockIn 300ms'))
+})
+
+test('every literal translation key exists in both dictionaries', async () => {
+  const code = await readFile(CLIENT, 'utf8')
+  const used = new Set([...code.matchAll(/(?<![\w$.])t\('([a-zA-Z][\w.]*)'/g)]
+    .map((match) => match[1])
+    .filter((key) => !key.endsWith('.')))
+  assert.ok(used.size > 20, 'the scan found the page copy')
+  for (const key of used) {
+    const occurrences = [...code.matchAll(new RegExp("'" + key.replace(/\./g, '\\.') + "':", 'g'))]
+    assert.equal(occurrences.length, 2, `key ${key} must exist once in zh and once in en`)
+  }
 })

@@ -16,12 +16,17 @@ import { GLOBAL_NAME, WIRE_VERSION, apply } from '../index.js'
  */
 function activate(config) {
   const listeners = new Map()
+  const injected = []
   const table = []
   const logs = []
   const ctx = {
     on(event, listener) {
       listeners.set(event, listener)
       return () => {}
+    },
+    inject(names, callback) {
+      // No Connection in this unit test: the routes simply are not registered.
+      injected.push(...names)
     },
   }
   const originals = { warn: console.warn, info: console.info, debug: console.debug }
@@ -34,7 +39,7 @@ function activate(config) {
   } finally {
     for (const level of ['warn', 'info', 'debug']) console[level] = originals[level]
   }
-  return { table, logs }
+  return { table, logs, injected }
 }
 
 test('a row without config publishes the defaults and stays silent', () => {
@@ -88,7 +93,10 @@ test('logLevel info reports acceptance and logLevel debug adds the resolved valu
 
 test('the index row is emitted on every render, reading fresh state', () => {
   const listeners = new Map()
-  const ctx = { on(event, listener) { listeners.set(event, listener) } }
+  const ctx = {
+    on(event, listener) { listeners.set(event, listener) },
+    inject() {},
+  }
   apply(ctx, { showElapsed: false })
   const first = []
   const second = []
@@ -97,4 +105,34 @@ test('the index row is emitted on every render, reading fresh state', () => {
   assert.equal(first.length, 1)
   assert.equal(second.length, 1)
   assert.equal(second[0].value.config.showElapsed, false)
+})
+
+test('the Host half registers the three upgrade routes on Connection', () => {
+  const routes = []
+  const ctx = {
+    on() {},
+    inject(names, callback) {
+      callback({
+        effect(fn) {
+          fn()
+          return () => {}
+        },
+        connection: {
+          fetch: {
+            register(route) {
+              routes.push(route)
+              return () => {}
+            },
+          },
+        },
+      })
+    },
+  }
+  apply(ctx, {})
+  assert.deepEqual(routes.map((route) => route.path), [
+    '/api/stream-polish/info',
+    '/api/stream-polish/update',
+    '/api/stream-polish/update/apply',
+  ])
+  assert.deepEqual(routes.map((route) => route.methods), [['GET'], ['GET'], ['POST']])
 })

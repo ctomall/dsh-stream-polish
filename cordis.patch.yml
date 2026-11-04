@@ -22,7 +22,10 @@
         settleFade: true     # fade the caret out once the reply settles
         settleMs: 260        # 100..1000; the cleanup timer adds 80ms
         stallMs: 15000       # 500..600000; "no new output" threshold
-        runStrip: true       # capsule above the composer while running
+        # Off in this profile on purpose: stream-aura already renders the run
+        # card in the same spot, so two capsules would stack. Turn it back on in
+        # Settings -> Plugins -> Stream polish, or set this to true.
+        runStrip: false
         showElapsed: true    # capsule shows the elapsed clock
         showActivity: true   # capsule shows last activity / stall text
         logLevel: warn       # silent | error | warn | info | debug
