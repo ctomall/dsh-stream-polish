@@ -259,7 +259,7 @@ test('the browser resolves the default configuration', { skip }, async (t) => {
   assert.equal(result.error, undefined)
   assert.equal(result.mounted.styles, 1)
   assert.equal(result.mounted.observers, 2)
-  assert.equal(result.mounted.slots, 2, 'run capsule + settings page')
+  assert.equal(result.mounted.slots, 2, 'run capsule + bundle config page')
   assert.equal(result.streaming.blockAnimation, 'dshSP_blockIn')
   assert.equal(result.streaming.blockDuration, '0.16s')
   assert.equal(result.streaming.caretWidth, '2px')

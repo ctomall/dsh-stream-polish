@@ -49,6 +49,8 @@ window.__ModuleLoader__.load({
 
     /** Prefix every diagnostic line carries. */
     const PREFIX = '[@local/stream-polish] '
+    /** This bundle's package name; also the key of its configuration page. */
+    const PACKAGE = '@local/stream-polish'
 
     /** Diagnostic levels, quiet to loud. Mirrors `config.js`. */
     const LOG_LEVELS = ['silent', 'error', 'warn', 'info', 'debug']
@@ -1381,19 +1383,18 @@ window.__ModuleLoader__.load({
         locale: NS,
       }, RunStrip))
 
-      ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-        name: 'settings.plugins.tab',
-        id: 'stream-polish',
-        order: 15,
+      // The bundle's own page inside Settings -> Plugins: this is where the
+      // Plugins page renders a package's configuration, keyed by its package
+      // name. `view: 'summary'` asks for a one-liner only; the page itself is
+      // rendered for `view: 'page'`.
+      ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+        name: 'plugins.bundle.config',
+        key: PACKAGE,
         locale: NS,
-        label: () => {
-          try {
-            return bound('tab')
-          } catch {
-            return 'Stream polish'
-          }
-        },
-      }, SettingsPage))
+      }, (ownerProps) => {
+        if (ownerProps !== undefined && ownerProps.view === 'summary') return null
+        return h(SettingsPage, ownerProps ?? {})
+      }))
     }
 
     return { inject: ['slots', 'locale'], apply, name: 'stream-polish' }
