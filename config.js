@@ -19,12 +19,22 @@ export const PACKAGE = '@local/stream-polish'
 /** Diagnostic levels, quiet to loud. `silent` suppresses every plugin log. */
 export const LOG_LEVELS = ['silent', 'error', 'warn', 'info', 'debug']
 
+/** Target-language tags accepted by the reasoning translator. `auto` follows the UI locale. */
+export const LANGUAGE_PATTERN = /^(?:auto|[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{1,8})*)$/
+
+/** Six-digit hex colours accepted by the step panel accent option. */
+export const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
+
+/** Translation services this bundle can reach through the optional `translator` service. */
+export const TRANSLATION_PROVIDERS = ['bing', 'google']
+
 /**
  * Every accepted option, in documentation order.
  *
- * `type` is `boolean` | `integer` | `enum`; `integer` options carry an
- * inclusive `min`/`max`, `enum` options carry their `values`. `default` is the
- * behavior of the previous release, so an empty config reproduces it exactly.
+ * `type` is `boolean` | `integer` | `enum` | `string`; `integer` options carry
+ * an inclusive `min`/`max`, `enum` options carry their `values`, and `string`
+ * options carry a `pattern`. `default` is the behavior of the previous release,
+ * so an empty config reproduces it exactly.
  */
 export const SPEC = {
   enabled: {
@@ -90,6 +100,68 @@ export const SPEC = {
     default: true,
     summary: '胶囊是否显示最近活动 / 停滞文案',
   },
+  stepPanel: {
+    type: 'boolean',
+    default: true,
+    summary: '是否在输入框上方逐条列出本轮思考与工具调用步骤',
+  },
+  stepPanelRows: {
+    type: 'integer',
+    default: 5,
+    min: 1,
+    max: 20,
+    summary: '步骤面板最多同时显示几条（更早的折叠成一行计数）',
+  },
+  stepPanelAccent: {
+    type: 'string',
+    pattern: COLOR_PATTERN,
+    default: '#4f8cff',
+    summary: '步骤面板强调色（六位十六进制，如 #4f8cff）',
+  },
+  stepPanelMotion: {
+    type: 'boolean',
+    default: true,
+    summary: '步骤增删时是否播放 160ms 淡入/位移动效（减少动态效果时自动关闭）',
+  },
+  stepPanelPhaseColors: {
+    type: 'boolean',
+    default: true,
+    summary: '是否按阶段着色：思考中性、工具强调、失败红、完成绿',
+  },
+  replaceToolRows: {
+    type: 'boolean',
+    default: false,
+    summary: '开启且步骤面板可见时，隐藏正文里的原生工具行；关闭即恢复原生工具行',
+  },
+  toolCardPolish: {
+    type: 'boolean',
+    default: true,
+    summary: '给原生工具行加圆角、描边、悬停和状态色等轻量美化',
+  },
+  translation: {
+    type: 'boolean',
+    default: false,
+    summary: '是否把展开的思考内容发送给翻译服务；默认关闭，开启前请确认隐私影响',
+  },
+  translationProvider: {
+    type: 'enum',
+    default: 'bing',
+    values: TRANSLATION_PROVIDERS,
+    summary: '翻译服务：bing | google（匿名端点，无需登录或 API key）',
+  },
+  translationTargetLanguage: {
+    type: 'string',
+    pattern: LANGUAGE_PATTERN,
+    default: 'zh-CN',
+    summary: '翻译目标语言；auto 跟随界面语言，也可填 zh-CN / en / ja 等标签',
+  },
+  translationTimeoutMs: {
+    type: 'integer',
+    default: 8000,
+    min: 1000,
+    max: 30000,
+    summary: '单次翻译请求的超时（毫秒）；超时保留原文并可手动重试',
+  },
   logLevel: {
     type: 'enum',
     default: 'warn',
@@ -125,6 +197,7 @@ export function expectationOf(key) {
   if (rule === undefined) return 'a known option'
   if (rule.type === 'boolean') return 'a boolean (true or false)'
   if (rule.type === 'integer') return 'an integer between ' + rule.min + ' and ' + rule.max
+  if (rule.type === 'string') return 'a string matching ' + String(rule.pattern)
   return 'one of ' + (rule.values ?? []).map((value) => '"' + value + '"').join(' | ')
 }
 
@@ -160,6 +233,9 @@ export function isValid(key, value) {
   if (rule.type === 'boolean') return typeof value === 'boolean'
   if (rule.type === 'integer') {
     return Number.isInteger(value) && value >= rule.min && value <= rule.max
+  }
+  if (rule.type === 'string') {
+    return typeof value === 'string' && rule.pattern.test(value)
   }
   return typeof value === 'string' && (rule.values ?? []).includes(value)
 }

@@ -28,7 +28,7 @@ import { createUpdater } from './lib/update.js'
 export const GLOBAL_NAME = '__DSH_STREAM_POLISH__'
 
 /** Wire shape version; the Client half ignores a payload it does not know. */
-export const WIRE_VERSION = 2
+export const WIRE_VERSION = 3
 
 /** This package's own directory, which is the checkout an upgrade moves. */
 export const PACKAGE_DIR = fileURLToPath(new URL('.', import.meta.url))
@@ -106,7 +106,18 @@ export function apply(ctx, config) {
   const { config: settings, issues } = normalizeConfig(config)
   report(settings, issues)
 
+  /**
+   * Read the optional translation service on demand.
+   *
+   * The official `cot-translation` bundle inserts `translator` before this row,
+   * but a profile may omit it. Reading it per request keeps this Host half
+   * loadable without the service: translation then answers `UNAVAILABLE` and
+   * every other surface keeps working.
+   */
+  const translatorOf = () => (typeof ctx.get === 'function' ? ctx.get('translator') : undefined)
+
   ctx.on('webserver/index-inject', (table) => {
+    const translator = translatorOf()
     table.push({
       kind: 'global',
       name: GLOBAL_NAME,
@@ -115,6 +126,14 @@ export function apply(ctx, config) {
         config: settings,
         defaults: DEFAULTS,
         issues,
+        capabilities: {
+          translation: {
+            available: translator !== undefined,
+            maxTextChars: typeof translator?.maxTextChars === 'number'
+              ? translator.maxTextChars
+              : null,
+          },
+        },
       },
     })
   })
@@ -123,7 +142,12 @@ export function apply(ctx, config) {
   // simply has no routes and the page reports that the Host half is missing.
   const updater = createUpdater({ packageDir: PACKAGE_DIR, logger: ctx.logger })
   ctx.inject(['connection'], (connectionCtx) => {
-    const routes = createRoutes({ updater, onUpgraded: () => scheduleReload(ctx) })
+    const routes = createRoutes({
+      updater,
+      settings,
+      translatorOf,
+      onUpgraded: () => scheduleReload(ctx),
+    })
     for (const route of routes) {
       connectionCtx.effect(
         () => connectionCtx.connection.fetch.register(route),

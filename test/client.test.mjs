@@ -182,7 +182,7 @@ function cssOf(load) {
 test('the client mirror matches config.js exactly', async () => {
   const { sandbox } = await loadClient()
   const mirror = sandbox.__DSH_STREAM_POLISH_CLIENT__
-  assert.equal(mirror.version, 2)
+  assert.equal(mirror.version, 3)
   assert.deepEqual(plain(mirror.defaults), DEFAULTS)
   assert.deepEqual(plain(Object.keys(mirror.spec)), Object.keys(SPEC))
   for (const key of Object.keys(SPEC)) {
@@ -190,10 +190,12 @@ test('the client mirror matches config.js exactly', async () => {
     if (SPEC[key].min !== undefined) expected.min = SPEC[key].min
     if (SPEC[key].max !== undefined) expected.max = SPEC[key].max
     if (SPEC[key].values !== undefined) expected.values = [...SPEC[key].values]
+    if (SPEC[key].pattern !== undefined) expected.pattern = String(SPEC[key].pattern)
     const actual = { type: mirror.spec[key].type, default: mirror.spec[key].default }
     if (mirror.spec[key].min !== undefined) actual.min = mirror.spec[key].min
     if (mirror.spec[key].max !== undefined) actual.max = mirror.spec[key].max
     if (mirror.spec[key].values !== undefined) actual.values = [...mirror.spec[key].values]
+    if (mirror.spec[key].pattern !== undefined) actual.pattern = String(mirror.spec[key].pattern)
     assert.deepEqual(plain(actual), expected, key)
   }
 })
@@ -209,7 +211,7 @@ test('no configuration source means the previous release behaviour', async () =>
 
 test('the host row config overrides defaults', async () => {
   const { sandbox } = await loadClient({
-    wire: { version: 2, config: { stallMs: 800, showElapsed: false, blockFadeMs: 240 } },
+    wire: { version: 3, config: { stallMs: 800, showElapsed: false, blockFadeMs: 240 } },
   })
   const { store } = sandbox.__DSH_STREAM_POLISH_CLIENT__
   assert.equal(store.get().stallMs, 800)
@@ -221,13 +223,13 @@ test('the host row config overrides defaults', async () => {
 
 test('this browser beats the host row, and the test hook beats both', async () => {
   const saved = await loadClient({
-    wire: { version: 2, config: { stallMs: 800 } },
+    wire: { version: 3, config: { stallMs: 800 } },
     saved: { stallMs: 4000 },
   })
   assert.equal(saved.sandbox.__DSH_STREAM_POLISH_CLIENT__.store.get().stallMs, 4000)
 
   const hook = await loadClient({
-    wire: { version: 2, config: { stallMs: 800 } },
+    wire: { version: 3, config: { stallMs: 800 } },
     saved: { stallMs: 4000 },
     hook: 900,
   })
@@ -263,7 +265,7 @@ test('logLevel silent suppresses diagnostics', async () => {
 })
 
 test('logLevel debug reports the resolved state', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { logLevel: 'debug' } } })
+  const load = await loadClient({ wire: { version: 3, config: { logLevel: 'debug' } } })
   const levels = load.logs.map((entry) => entry.level)
   assert.ok(levels.includes('info'))
   assert.ok(levels.includes('debug'))
@@ -276,10 +278,15 @@ test('the default mount installs two stylesheets, two observers, two slots', asy
   assert.equal(decorationStyles(load)[0].dataset.plugin, '@local/stream-polish')
   assert.equal(load.styles.length, 2, 'plus the settings-page stylesheet')
   assert.equal(load.observers.length, 2, 'settle + run observers')
-  assert.deepEqual(mounted.injected, ['conversation.input.dock', 'plugins.bundle.config'])
-  assert.equal(mounted.registrations.length, 2)
+  assert.deepEqual(mounted.injected, [
+    'conversation.input.dock',
+    'conversation.chat.reasoning.body',
+    'plugins.bundle.config',
+  ])
+  assert.equal(mounted.registrations.length, 3)
   assert.equal(mounted.registrations[0].options.id, 'run-strip')
-  assert.equal(mounted.registrations[1].options.key, '@local/stream-polish', 'the bundle page is keyed by package name')
+  assert.equal(mounted.registrations[1].options.id, 'step-panel')
+  assert.equal(mounted.registrations[2].options.key, '@local/stream-polish', 'the bundle page is keyed by package name')
   assert.equal(mounted.effects.length, 3, 'dictionaries, page styles, surfaces')
 
   const css = cssOf(load)
@@ -287,22 +294,26 @@ test('the default mount installs two stylesheets, two observers, two slots', asy
   assert.ok(css.includes('animation:dshSP_caret 1200ms'), 'caret period default')
   assert.ok(css.includes('animation:dshSP_caretOut 260ms'), 'settle fade default')
   assert.ok(css.includes('.dshRS_pill'), 'capsule styles')
+  assert.ok(css.includes('.dshST_card'), 'step panel styles')
+  assert.ok(css.includes('--dshST-accent:#4f8cff'), 'accent colour from configuration')
+  assert.ok(!css.includes('.dshTR_root'), 'translation is off by default')
 })
 
 test('durations come from configuration', async () => {
   const load = await loadClient({
-    wire: { version: 2, config: { blockFadeMs: 200, caretPeriodMs: 2000, settleMs: 400 } },
+    wire: { version: 3, config: { blockFadeMs: 200, caretPeriodMs: 2000, settleMs: 400 } },
   })
   applyClient(load.module)
   const css = cssOf(load)
   assert.ok(css.includes('animation:dshSP_blockIn 200ms'))
   assert.ok(css.includes('animation:dshSP_caret 2000ms'))
   assert.ok(css.includes('animation:dshSP_caretOut 400ms'))
-  assert.ok(!css.includes('160ms'))
+  assert.ok(!css.includes('animation:dshSP_blockIn 160ms'))
+  assert.ok(!css.includes('animation:dshSP_caret 1200ms'))
 })
 
 test('blockFade: false contributes no block rule', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { blockFade: false } } })
+  const load = await loadClient({ wire: { version: 3, config: { blockFade: false } } })
   applyClient(load.module)
   const css = cssOf(load)
   assert.ok(!css.includes('dshSP_blockIn'))
@@ -310,7 +321,7 @@ test('blockFade: false contributes no block rule', async () => {
 })
 
 test('caret: false drops the caret and its settle observer', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { caret: false } } })
+  const load = await loadClient({ wire: { version: 3, config: { caret: false } } })
   applyClient(load.module)
   const css = cssOf(load)
   assert.ok(!css.includes('dshSP_caret'))
@@ -319,7 +330,7 @@ test('caret: false drops the caret and its settle observer', async () => {
 })
 
 test('settleFade: false drops the fade but keeps the breathing caret', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { settleFade: false } } })
+  const load = await loadClient({ wire: { version: 3, config: { settleFade: false } } })
   applyClient(load.module)
   const css = cssOf(load)
   assert.ok(css.includes('dshSP_caret '))
@@ -329,7 +340,7 @@ test('settleFade: false drops the fade but keeps the breathing caret', async () 
 })
 
 test('runStrip: false drops the capsule styles and its observer', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { runStrip: false } } })
+  const load = await loadClient({ wire: { version: 3, config: { runStrip: false } } })
   applyClient(load.module)
   const css = cssOf(load)
   assert.ok(!css.includes('dshRS'))
@@ -337,13 +348,17 @@ test('runStrip: false drops the capsule styles and its observer', async () => {
 })
 
 test('enabled: false mounts no decoration but keeps the settings page', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { enabled: false } } })
+  const load = await loadClient({ wire: { version: 3, config: { enabled: false } } })
   const mounted = applyClient(load.module)
   assert.equal(decorationStyles(load).length, 0, 'no decoration stylesheet')
   assert.equal(load.observers.length, 0)
   assert.equal(load.styles.length, 1, 'the settings page still has its stylesheet')
-  assert.deepEqual(mounted.injected, ['conversation.input.dock', 'plugins.bundle.config'])
-  assert.equal(mounted.registrations.length, 2, 'the page must be reachable to switch it back on')
+  assert.deepEqual(mounted.injected, [
+    'conversation.input.dock',
+    'conversation.chat.reasoning.body',
+    'plugins.bundle.config',
+  ])
+  assert.equal(mounted.registrations.length, 3, 'the page must be reachable to switch it back on')
 })
 
 test('a store update re-applies immediately and persists the diff', async () => {
@@ -375,7 +390,7 @@ test('store.update rejects unusable values without touching the store', async ()
 })
 
 test('store.reset returns to the row config and clears the saved layer', async () => {
-  const load = await loadClient({ wire: { version: 2, config: { stallMs: 800 } } })
+  const load = await loadClient({ wire: { version: 3, config: { stallMs: 800 } } })
   applyClient(load.module)
   const { store } = load.sandbox.__DSH_STREAM_POLISH_CLIENT__
   store.update({ stallMs: 4000, showActivity: false })
@@ -408,4 +423,192 @@ test('every literal translation key exists in both dictionaries', async () => {
     const occurrences = [...code.matchAll(new RegExp("'" + key.replace(/\./g, '\\.') + "':", 'g'))]
     assert.equal(occurrences.length, 2, `key ${key} must exist once in zh and once in en`)
   }
+})
+
+test('stablePrefix only exposes completed or bounded text', async () => {
+  const { sandbox } = await loadClient()
+  const { stablePrefix } = sandbox.__DSH_STREAM_POLISH_CLIENT__
+  assert.equal(stablePrefix('abc', 0, 4000), 0, 'an unfinished single line stays original')
+  assert.equal(stablePrefix('a\n\nb', 0, 4000), 3, 'a completed paragraph is translated')
+  assert.equal(stablePrefix('a\nb', 0, 4000), 2, 'without a blank line a completed line is translated')
+  assert.equal(stablePrefix('a\n\nb', 3, 4000), 3, 'the cursor moves past translated text')
+  const long = 'word '.repeat(1200)
+  const end = stablePrefix(long, 0, 4000)
+  assert.ok(end >= 3900 && end <= long.length, 'a long paragraph is cut near the request limit')
+})
+
+test('buildSteps uses the Chat node index and keeps tool-call rows', async () => {
+  const { sandbox } = await loadClient()
+  const { buildSteps } = sandbox.__DSH_STREAM_POLISH_CLIENT__
+  const assistant = {
+    kind: 'assistant-step',
+    visibility: 'visible',
+    anchorSeq: 10,
+    location: { kind: 'step', turn: { turn: 4 }, step: { step: 1 } },
+    data: {
+      status: 'settled',
+      turn: 4,
+      step: 1,
+      blocks: [
+        { kind: 'reasoning', text: 'look\ncloser' },
+        { kind: 'text', text: 'done' },
+      ],
+      finalNode: { timing: { stepStartTime: 1000, completedTime: 2500 } },
+    },
+  }
+  const tool = {
+    kind: 'tool-call',
+    visibility: 'visible',
+    anchorSeq: 11,
+    location: { kind: 'step', turn: { turn: 4 }, step: { step: 1 } },
+    data: {
+      root: {
+        kind: 'tool-result',
+        callId: 'call-1',
+        name: 'Read',
+        time: 3200,
+        callTime: 2500,
+        isError: false,
+        args: { text: (key) => (key === 'file_path' ? 'README.md' : undefined) },
+      },
+    },
+  }
+  const snapshot = {
+    timeline: { turnOrder: [4], turns: new Map([[4, { steps: [] }]]) },
+    locations: { getTurn: (turn) => (turn === 4 ? ['a', 't'] : []) },
+    nodes: { get: (key) => (key === 'a' ? assistant : key === 't' ? tool : undefined) },
+    legacy: { nodes: [], runningCalls: [], partial: null },
+  }
+  const projected = buildSteps(snapshot, { stepPanelRows: 5 }, 4000)
+  assert.deepEqual(plain(projected.rows.map((row) => [row.kind, row.action, row.object, row.status, row.duration])), [
+    ['thinking', 'step.thinking', 'look', 'done', 1500],
+    ['reply', 'step.reply', 'done', 'done', 1500],
+    ['tool', 'Read', 'README.md', 'done', 700],
+  ])
+})
+
+test('buildSteps projects this turn, statuses, objects, durations and the visible limit', async () => {
+  const { sandbox } = await loadClient()
+  const { buildSteps } = sandbox.__DSH_STREAM_POLISH_CLIENT__
+  const snapshot = {
+    timeline: {
+      turnOrder: [1],
+      turns: new Map([[1, { steps: [{ step: 1, start: { time: 1000 } }] }]]),
+    },
+    legacy: {
+      nodes: [
+        {
+          kind: 'assistant', seq: 2, turn: 1, step: 1,
+          timing: { stepStartTime: 1000, completedTime: 3000 },
+          blocks: [
+            { kind: 'reasoning', text: 'plan\nmore' },
+            { kind: 'text', text: 'answer' },
+            { kind: 'tool-call', callId: 'c1', name: 'Bash', argsRaw: '{}' },
+          ],
+        },
+        {
+          kind: 'tool-result', seq: 3, time: 3500, callTime: 3000, callId: 'c1', name: 'Bash',
+          args: { text: (key) => (key === 'command' ? 'ls -la' : undefined) },
+          location: { kind: 'step', turn: { turn: 1 }, step: { step: 1 } },
+          isError: false,
+        },
+      ],
+      runningCalls: [{
+        callId: 'c2', name: 'Read', turn: 1, step: 1, time: 4000, phase: 'start',
+        args: { text: (key) => (key === 'file_path' ? 'a.js' : undefined) },
+      }],
+      partial: { turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'live thought' }] },
+    },
+  }
+  const all = buildSteps(snapshot, { stepPanelRows: 5 }, 5000)
+  assert.equal(all.turn, 1)
+  assert.equal(all.hidden, 0)
+  assert.deepEqual(plain(all.rows.map((row) => row.kind)), ['thinking', 'reply', 'tool', 'tool', 'thinking'])
+  assert.equal(all.rows[0].object, 'plan')
+  assert.equal(all.rows[0].duration, 2000)
+  assert.equal(all.rows[2].action, 'Bash')
+  assert.equal(all.rows[2].object, 'ls -la')
+  assert.equal(all.rows[2].status, 'done')
+  assert.equal(all.rows[2].duration, 500)
+  assert.equal(all.rows[3].status, 'running')
+  assert.equal(all.rows[3].object, 'a.js')
+  assert.equal(all.rows[3].duration, 1000)
+  assert.equal(all.rows[4].status, 'running')
+  assert.equal(all.rows[4].duration, 4000, 'the partial Assistant uses the step start')
+
+  const bounded = buildSteps(snapshot, { stepPanelRows: 2 }, 5000)
+  assert.equal(bounded.hidden, 3)
+  assert.deepEqual(plain(bounded.rows.map((row) => row.kind)), ['tool', 'thinking'])
+
+  assert.deepEqual(plain(buildSteps({ timeline: { turnOrder: [], turns: new Map() }, legacy: {} }, { stepPanelRows: 5 }, 0)),
+    { turn: null, rows: [], hidden: 0 })
+})
+
+
+test('translation registers the reasoning body only when enabled and available', async () => {
+  const available = await loadClient({
+    wire: {
+      version: 3,
+      config: { translation: true },
+      capabilities: { translation: { available: true, maxTextChars: 4000 } },
+    },
+  })
+  const mounted = applyClient(available.module)
+  assert.deepEqual(mounted.injected, [
+    'conversation.input.dock',
+    'conversation.chat.reasoning.body',
+    'plugins.bundle.config',
+  ])
+  assert.equal(mounted.registrations.length, 4)
+  const reasoning = mounted.registrations.find((entry) => entry.options.name === 'conversation.chat.reasoning.body')
+  assert.equal(reasoning.options.priority, -1)
+  assert.ok(cssOf(available).includes('.dshTR_root'), 'translation toolbar styles')
+
+  const missingService = await loadClient({
+    wire: {
+      version: 3,
+      config: { translation: true },
+      capabilities: { translation: { available: false, maxTextChars: null } },
+    },
+  })
+  const disabled = applyClient(missingService.module)
+  assert.equal(
+    disabled.registrations.some((entry) => entry.options.name === 'conversation.chat.reasoning.body'),
+    false,
+    'no wrapper shadows the built-in body when the translator is unavailable',
+  )
+  assert.ok(cssOf(missingService).includes('.dshTR_root'), 'toolbar styles follow the switch, not availability')
+})
+
+test('stepPanel: false drops the panel styles but keeps the capsule', async () => {
+  const load = await loadClient({ wire: { version: 3, config: { stepPanel: false } } })
+  applyClient(load.module)
+  const css = cssOf(load)
+  assert.ok(!css.includes('.dshST_card'))
+  assert.ok(css.includes('.dshRS_pill'))
+})
+
+test('replaceToolRows contributes the transcript hide rule only when enabled', async () => {
+  const off = await loadClient()
+  applyClient(off.module)
+  assert.ok(!cssOf(off).includes('data-dsh-sp-tools-hidden'))
+
+  const on = await loadClient({ wire: { version: 3, config: { replaceToolRows: true } } })
+  applyClient(on.module)
+  const css = cssOf(on)
+  assert.ok(css.includes('html[data-dsh-sp-tools-hidden] [data-chat-flow] [data-tool]'))
+  assert.ok(css.includes('display:none'))
+})
+
+test('toolCardPolish contributes paint-only tool row styles', async () => {
+  const on = await loadClient({ wire: { version: 3, config: { toolCardPolish: true } } })
+  applyClient(on.module)
+  const css = cssOf(on)
+  assert.ok(css.includes(':where([data-chat-flow] [data-tool])'))
+  assert.ok(css.includes('box-shadow:inset 0 0 0 .5px'))
+  assert.ok(!css.includes('data-tool]{border:'), 'the tool rule adds no layout-changing border')
+
+  const off = await loadClient({ wire: { version: 3, config: { toolCardPolish: false } } })
+  applyClient(off.module)
+  assert.ok(!cssOf(off).includes(':where([data-chat-flow] [data-tool])'))
 })

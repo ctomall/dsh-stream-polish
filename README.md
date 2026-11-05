@@ -36,9 +36,52 @@
 - 没有运行行时，`[data-streaming]` 存在即为 `Writing reply`，否则为 `Thinking`。
 - `[data-chat-running]` 里的总时长文字、`[data-shimmer]` 里的计时、纯 `12s` / `1m 5s` 文本都不算“新输出”，否则停滞检测永远不会触发。
 
+## 本轮步骤面板
+
+同一处 `conversation.input.dock` 上还有 `id: step-panel` 的列表项，逐条列出**最新一轮**的思考、回复和工具调用。它按 composer stack 的正常文档流排在输入框上方，会占据真实高度并把正文推上去，**不覆盖**最后一张工具卡；列表自己滚动，不接管正文滚动。
+
+每条占一行，四个字段固定：
+
+| 字段 | 来源 | 示例 |
+| --- | --- | --- |
+| 动作 | 工具名（`Bash`/`Read`/`Write`…，未知工具保留原名）或阶段（思考 / 回复） | 运行命令 |
+| 对象 | 工具参数里最具体的一个：`command`、`file_path`、`pattern`、`query`、`url`、`description`；思考/回复取首个非空行 | `npm test` |
+| 状态 | `running` / `pending` / `done` / `error`，来自 Tool 生命周期或 Assistant 的 interrupted 标记 | 进行中 |
+| 用时 | Tool 结果用 `time - callTime`，运行中的调用按秒累加；Assistant 用 `completedTime - stepStartTime` | 0.5s |
+
+> 本档案同时启用了 `stream-aura`，它也会在同一个位置渲染“当前轮过程”步骤清单（`steps: rail`）。两个列表同时开启会上下堆叠；要么把 `stream-aura` 切成单行模式（`steps: line`），要么在设置页关掉其中一个。
+
+数据来自 Chat 的公开快照，不读 DOM：
+
+- `useChat`（`session` 作用域的框架标准 prop）取 `ChatSnapshot`；
+- `timeline.turnOrder` 决定“本轮”，`timeline.turns` 提供 step 起点；
+- `legacy.nodes` 里的 Assistant 节点给出思考/回复块和 `timing`，Tool-result 节点给出 `callTime → time`；
+- `legacy.runningCalls` 给进行中的工具，`legacy.partial` 给正在流式的思考/回复前缀；
+- 只有 `stepPanelRows` 条可见，更早的折成一行“更早 N 条”。
+- 运行期间显示；本轮结束后保留 8 秒再收起，与运行胶囊的静默退出节奏一致。
+- 运行胶囊开启时，阶段/已用时长/最近活动移入面板标题栏，独立的浮动胶囊在面板可见期间隐藏，避免压在标题上。
+- `replaceToolRows: true` 时，面板可见期间原生工具行（`[data-chat-flow] [data-tool]`）隐藏，面板消失后恢复；这会把 diff、命令输出和工具结果暂时从正文里拿掉。
+
+增量更新：行按 `seq`（已落定节点）与开始时间（运行中调用）排序；运行中的用时每秒 tick 一次，其他时刻不重建列表。新增/删除行只影响列表本身，不会重挂载回答正文，也不会改变展开状态。`stepPanelMotion` 关闭时没有入场动画；系统 `prefers-reduced-motion: reduce` 下同样自动关闭。
+
+## 思考翻译
+
+展开一条“思考”后，正文上方出现与现有界面一致的入口：**查看原文** ↔ **查看译文**。两个视图复用 Chat 自己的 `conversation.chat.reasoning.content` Factory，只替换传入的文本，因此 Markdown 排版、代码块和流式光标都不变；切换只改本地视图状态，不折叠、不重挂载，也不打断正在流式到达的正文。
+
+翻译由可选的 Host 服务 `translator` 完成（`@deepseek-ai/dsh-experimental-translator`，通常随 `cot-translation` 组合包挂载）：
+
+- **目标语言由用户配置**：`translationTargetLanguage`，默认 `zh-CN`；`auto` 跟随界面语言。优先级与其它配置相同（内置默认 < 档案 `cordis.patch.yml` < 本浏览器保存值）。
+- **只发稳定前缀**：完整段落优先；没有空行时取已完成行；单段过长时按请求上限切块。未完成的末尾片段始终保留原文，所以流式输出从不等翻译。
+- **增量追加**：已译片段按游标累积，新段落到达后只翻译新增部分，不重发整段。
+- **请求边界**：浏览器 `POST ./api/stream-polish/translate`；Host 校验长度（`translator.maxTextChars`）、语言标签、provider 与 Session 标识，再调用 `translator.resolve()` / `translate()`。`translationTimeoutMs` 同时约束浏览器与 Host 的等待。
+- **降级**：服务未挂载、超时、限流、HTTP 失败或无效响应时保留原文，工具栏显示“翻译暂不可用，已显示原文”+ **重试**；不会自动重试，也不会把原文转投给另一个 provider。展开区卸载、切换 provider/语言、关闭插件都会 abort 未完成请求，迟到的结果被忽略。
+- **隐私**：`translation` 默认 **false**。开启后展开的思考内容会发送给所选匿名端点（Bing/Google），可能包含私有代码或对话细节；原文始终保留。
+
+与官方 `cot-translation` 组合包的关系：两者使用同一个 `translator` 服务。本插件只在 `translation: true` 且 Host 发布 `capabilities.translation.available` 时，以 `priority: -1` 遮蔽 `conversation.chat.reasoning.body` 这个 single slot；关闭开关会撤回注册，内建 body 原样回来。若档案同时启用官方组合包，请二选一，避免同一位置出现两套翻译工具栏。
+
 ## 配置
 
-行为全部由一个配置对象决定，默认值就是 1.0.0 的行为：不配置任何东西，观感与之前完全一致。改配置不需要改源码，刷新页面即生效。
+行为全部由一个配置对象决定：1.2.0 的流式装饰默认值保持不变，步骤面板默认开启，思考翻译默认关闭（发送外部请求，必须显式开启）。改配置不需要改源码，刷新页面即生效。
 
 加载优先级（低 → 高）：
 
@@ -67,6 +110,17 @@ Host 半在行激活时用 `config.js` 校验一次：合法值随 `webserver/in
 | `runStrip` | boolean | true | true / false | 输入框上方是否显示运行胶囊 | 否 |
 | `showElapsed` | boolean | true | true / false | 胶囊是否显示当前阶段已用时长 | 否 |
 | `showActivity` | boolean | true | true / false | 胶囊是否显示最近活动 / 停滞文案 | 否 |
+| `stepPanel` | boolean | true | true / false | 输入框上方是否显示本轮步骤面板 | 否 |
+| `stepPanelRows` | number（整数） | 5 | 1–20 | 步骤面板最多同时显示几条，更早的折叠成一行计数 | 否 |
+| `stepPanelAccent` | string（文本） | #4f8cff | 六位十六进制 `#RRGGBB` | 步骤面板强调色（运行中工具、进行中状态） | 否 |
+| `stepPanelMotion` | boolean | true | true / false | 步骤增删时播放 160ms 淡入/位移动效；减少动态效果时自动关闭 | 否 |
+| `stepPanelPhaseColors` | boolean | true | true / false | 按阶段着色：思考中性、工具强调、失败红、完成绿 | 否 |
+| `replaceToolRows` | boolean | false（本档案 patch 置 true） | true / false | 面板可见时隐藏正文里的原生工具行，关闭即恢复；工具结果/diff/命令输出不再显示在原位 | 否 |
+| `toolCardPolish` | boolean | true | true / false | 原生工具行圆角、内描边、悬停与运行/失败状态色；只改绘制，不改宽高与点击区 | 否 |
+| `translation` | boolean | false | true / false | 是否把展开的思考内容发送给翻译服务（默认关闭） | 否 |
+| `translationProvider` | enum | bing | bing, google | 翻译服务；两者都是匿名端点 | 否 |
+| `translationTargetLanguage` | string（文本） | zh-CN | `auto` 或语言标签，如 zh-CN、en、ja | 翻译目标语言；auto 跟随界面语言 | 否 |
+| `translationTimeoutMs` | number（整数） | 8000 | 1000–30000 | 单次翻译请求超时，毫秒 | 否 |
 | `logLevel` | enum | warn | silent, error, warn, info, debug | 本插件日志级别 | 否 |
 
 `logLevel` 只影响本插件自己的输出：`silent` 全静音；`error` 只报错误；`warn`（默认）在配置有误时告警，合法配置下完全静默；`info` 额外报告一次「configuration accepted」；`debug` 再打印解析后的完整配置对象。
@@ -165,12 +219,18 @@ Markdown 块的 React key 是**源码字符偏移**（例如 `0`、`57`、`566`�
 
 运行胶囊另有一个 `MutationObserver`，只看 `[data-chat-flow]` 内的正文/工具变化；它忽略 `[data-chat-running]` 和 `[data-shimmer]`，避免总时长计时器把停滞状态刷掉。
 
+步骤面板走的是 Chat 的公开数据面：`useChat` 给 `ChatSnapshot`，`timeline` 给轮次/步骤边界，`legacy.nodes` 给已落定的 Assistant 与 Tool-result，`legacy.runningCalls` / `legacy.partial` 给进行中的前缀。没有解析 DOM，也没有读 Session 日志文件。
+
+思考翻译只注册 `conversation.chat.reasoning.body` 这一个 single slot，并用 Chat 的 `conversation.chat.reasoning.content` Factory 渲染译文或原文；展开状态、滚动位置和流式光标仍由 Chat 自己持有。
+
 ## 文件
 
 | 文件 | 作用 |
 | --- | --- |
-| `client.js` | Client 半：配置解析、样式表、settling 观察器、运行观察器、运行胶囊 |
-| `index.js` | Host 半：校验行配置、按 `logLevel` 报告问题、下发 `__DSH_STREAM_POLISH__` |
+| `client.js` | Client 半：配置解析、样式表、settling/运行观察器、运行胶囊、步骤面板、思考翻译 body、设置页 |
+| `index.js` | Host 半：校验行配置、按 `logLevel` 报告问题、下发 `__DSH_STREAM_POLISH__` 与能力快照 |
+| `lib/routes.js` | `/api/stream-polish/{info,update,update/apply,translation,translate}` 五个认证路由 |
+| `lib/update.js` | 在线升级的 git 检查、快进、校验与回滚 |
 | `config.js` | 配置契约：`SPEC`、默认值、校验与错误文案（Host 与文档共用） |
 | `lib/update.js` | 在线升级：git 工作区定位、fetch / 状态比较、快进、回滚 |
 | `lib/routes.js` | `/api/stream-polish` 的三个路由（info / update / update/apply） |
@@ -205,12 +265,13 @@ plugin_manager install_bundle target=link:/home/pro/dsh/stream-polish
 cd stream-polish && npm test
 ```
 
-- `test/config.test.mjs` 覆盖每个配置项的默认值、合法值、非法值和边界值（`min`/`max` 接受，`min-1`/`max+1` 拒绝），锁定「空配置 == 1.0.0 行为」，并检查 README 表格是否写全了所有配置项。
-- `test/client.test.mjs` 在 `node:vm` 里加载 `client.js`，验证镜像表与 `config.js` 一致、四层优先级、错误文案与 Host 完全同文、样式表按配置生成、`enabled` / `caret` / `settleFade` / `runStrip` 的挂载开关，以及设置页写入后**立即重建**样式、按差量持久化、恢复默认。
-- `test/host.test.mjs` 验证 `index.js` 的下发内容、`logLevel` 诊断门限和非法值回落。
+- `test/config.test.mjs` 覆盖每个配置项的默认值、合法值、非法值和边界值（`min`/`max` 接受，`min-1`/`max+1` 拒绝），锁定「空配置 == 1.2.0 的流式装饰行为」，检查 21 个配置项的类型/正则/边界，并检查 README 表格是否写全了所有配置项。
+- `test/client.test.mjs` 在 `node:vm` 里加载 `client.js`，验证镜像表与 `config.js` 一致（含正则）、四层优先级、错误文案与 Host 完全同文、样式表按配置生成、`enabled` / `caret` / `settleFade` / `runStrip` / `stepPanel` 的挂载开关、设置页写入后**立即重建**样式、按差量持久化、恢复默认，以及步骤面板投影（对象/状态/用时/可见条数）和翻译切块边界（`stablePrefix`）。
+- `test/host.test.mjs` 验证 `index.js` 的下发内容（含 `capabilities.translation`）、`logLevel` 诊断门限、非法值回落和五个路由的注册。
+- `test/routes.test.mjs` 验证升级与翻译路由：成功、拒绝、异常封装、能力查询、长度/语言/provider/Session 校验、超时映射，以及失败响应绝不回显原文。
 - `test/browser.test.mjs` 用 Node 内置 WebSocket 走 CDP 驱动本机 Chromium，真开页面验证计算样式：默认 160ms / 1.2s / 0.26s、改配置后时长跟着变、`caret:false`、`enabled:false`、`runStrip:false`，以及 `prefers-reduced-motion` 降级。找不到 Chromium 时自动跳过，可用 `CHROME_PATH` 指定。
 
-`npm run lint` 用 `node --check` 检查三个源文件的语法。
+`npm run lint` 用 `node --check` 检查五个源文件的语法。
 
 ### 真实档案里的验收（需要 Playwright）
 
@@ -250,6 +311,17 @@ python3 stream-polish/test/run.py --stall-ms 800
 - 选择器依赖 `AssistantMarkdown` 当前的三层结构；DSH 大版本改结构时需要跟着调。
 
 ## 变更记录
+
+### 1.3.0
+
+- 新增**本轮步骤面板**：`conversation.input.dock` 的 `id: step-panel`，逐条列出最新一轮的思考、回复与工具调用，固定展示动作、对象、状态与用时；`stepPanelRows` 控制可见条数，更早的折叠成一行计数。
+- 步骤面板数据来自 `useChat` 的公开 `ChatSnapshot`（`timeline` + `legacy.nodes` + `runningCalls` + `partial`），不解析 DOM、不读 Session 日志；运行中的用时每秒 tick，其他时刻不重建列表。
+- 新增**思考翻译**：`conversation.chat.reasoning.body` 的 single slot 包装，复用 Chat 的 `reasoning.content` Factory，提供「查看原文 / 查看译文」切换；只翻译完整段落或限长前缀，未完成尾巴保留原文。
+- 翻译目标语言由用户配置：`translationTargetLanguage`，默认 `zh-CN`，`auto` 跟随界面语言；`translationProvider` 默认 `bing`，`translationTimeoutMs` 默认 8000ms。
+- 新增 Host 路由 `GET /api/stream-polish/translation` 与 `POST /api/stream-polish/translate`，复用可选的 `ctx.translator`；服务缺失、超时、限流、无效响应都保留原文并给出手动重试，不自动重试、不换 provider。
+- `index-inject` wire 升到 v3，新增 `capabilities.translation`（是否可用 + `maxTextChars`）；旧版本 Client 会忽略新 payload。
+- 设置页新增「步骤面板」与「思考翻译」两组卡片；翻译默认关闭（会向外部端点发送展开的思考内容），隐私提示常驻。
+- 配置项从 12 个增加到 21 个；`npm test` 从 59 条增加到 71 条。
 
 ### 1.1.0
 

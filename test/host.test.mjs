@@ -52,6 +52,9 @@ test('a row without config publishes the defaults and stays silent', () => {
   assert.deepEqual(row.value.config, DEFAULTS)
   assert.deepEqual(row.value.defaults, DEFAULTS)
   assert.deepEqual(row.value.issues, [])
+  assert.deepEqual(row.value.capabilities, {
+    translation: { available: false, maxTextChars: null },
+  })
   assert.deepEqual(logs, [], 'logLevel warn + a valid config prints nothing')
 })
 
@@ -107,7 +110,7 @@ test('the index row is emitted on every render, reading fresh state', () => {
   assert.equal(second[0].value.config.showElapsed, false)
 })
 
-test('the Host half registers the three upgrade routes on Connection', () => {
+test('the Host half registers the five routes on Connection', () => {
   const routes = []
   const ctx = {
     on() {},
@@ -133,6 +136,8 @@ test('the Host half registers the three upgrade routes on Connection', () => {
     '/api/stream-polish/info',
     '/api/stream-polish/update',
     '/api/stream-polish/update/apply',
+    '/api/stream-polish/translation',
+    '/api/stream-polish/translate',
   ])
-  assert.deepEqual(routes.map((route) => route.methods), [['GET'], ['GET'], ['POST']])
+  assert.deepEqual(routes.map((route) => route.methods), [['GET'], ['GET'], ['POST'], ['GET'], ['POST']])
 })

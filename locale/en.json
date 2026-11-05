@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Stream polish",
-    "description": "Adds block fades, a breathing caret, and a live run capsule with phase, elapsed time, and activity for long waits."
+    "description": "Adds block fades, a breathing caret, a live run capsule, a per-turn step panel above the composer, and optional machine translation of expanded reasoning."
   }
 }

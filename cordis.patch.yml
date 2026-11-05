@@ -28,4 +28,27 @@
         runStrip: false
         showElapsed: true    # capsule shows the elapsed clock
         showActivity: true   # capsule shows last activity / stall text
+        # This-turn step panel above the composer. `stream-aura` also renders
+        # a step list in the same spot (its `steps: rail`); if both are on they
+        # stack. Keep this one on and switch stream-aura to its single-line
+        # mode (or turn one of them off) if the double list bothers you.
+        # `stepPanelRows` bounds the visible list; older rows fold into one
+        # counted line.
+        stepPanel: true
+        stepPanelRows: 5     # 1..20
+        stepPanelAccent: '#4f8cff'
+        stepPanelMotion: true        # 160ms enter; reduced-motion turns it off
+        stepPanelPhaseColors: true  # thinking neutral / tool accent / error red / done green
+        # Hide the transcript's native tool rows while the step panel is
+        # visible; turn this off to get the original tool cards back.
+        replaceToolRows: true
+        # Light polish for the native tool rows (radius, hairline, hover,
+        # state tint). Purely paint; layout and hit areas are unchanged.
+        toolCardPolish: true
+        # Reasoning machine translation. Off by default: enabling it sends
+        # expanded reasoning to the selected anonymous endpoint.
+        translation: false
+        translationProvider: bing    # bing | google
+        translationTargetLanguage: zh-CN  # auto follows the UI locale
+        translationTimeoutMs: 8000   # 1000..30000
         logLevel: warn       # silent | error | warn | info | debug

@@ -34,6 +34,17 @@ const BEHAVIOR_DEFAULTS = {
   runStrip: true,
   showElapsed: true,
   showActivity: true,
+  stepPanel: true,
+  stepPanelRows: 5,
+  stepPanelAccent: '#4f8cff',
+  stepPanelMotion: true,
+  stepPanelPhaseColors: true,
+  replaceToolRows: false,
+  toolCardPolish: true,
+  translation: false,
+  translationProvider: 'bing',
+  translationTargetLanguage: 'zh-CN',
+  translationTimeoutMs: 8000,
   logLevel: 'warn',
 }
 
@@ -51,7 +62,7 @@ test('every option has a rule, a default, and a documented summary', () => {
   for (const key of KEYS) {
     const rule = SPEC[key]
     assert.ok(rule, key)
-    assert.ok(['boolean', 'integer', 'enum'].includes(rule.type), key + ' type')
+    assert.ok(['boolean', 'integer', 'enum', 'string'].includes(rule.type), key + ' type')
     assert.equal(typeof rule.summary, 'string')
     assert.ok(rule.summary.length > 0, key + ' summary')
     if (rule.type === 'integer') {
@@ -66,6 +77,11 @@ test('every option has a rule, a default, and a documented summary', () => {
     if (rule.type === 'boolean') {
       assert.equal(typeof rule.default, 'boolean', key + ' boolean default')
     }
+    if (rule.type === 'string') {
+      assert.ok(rule.pattern instanceof RegExp, key + ' pattern')
+      assert.equal(typeof rule.default, 'string', key + ' string default')
+      assert.ok(rule.pattern.test(rule.default), key + ' default matches its pattern')
+    }
   }
 })
 
@@ -76,7 +92,9 @@ test('legal values are accepted for every option', () => {
       ? [true, false]
       : rule.type === 'enum'
         ? [...rule.values]
-        : [rule.min, rule.default, rule.max]
+        : rule.type === 'string'
+          ? [rule.default]
+          : [rule.min, rule.default, rule.max]
     for (const value of accepted) {
       assert.equal(isValid(key, value), true, `${key}=${String(value)} should be legal`)
       const { config, issues } = normalizeConfig({ [key]: value })
@@ -115,6 +133,17 @@ test('illegal values keep the default and name the option and expectation', () =
     runStrip: 1,
     showElapsed: {},
     showActivity: [],
+    stepPanel: 1,
+    stepPanelRows: 0,
+    stepPanelAccent: 'blue',
+    stepPanelMotion: 'on',
+    stepPanelPhaseColors: null,
+    replaceToolRows: 'yes',
+    toolCardPolish: 'yes',
+    translation: 'yes',
+    translationProvider: 'deepl',
+    translationTargetLanguage: '!!',
+    translationTimeoutMs: 999,
     logLevel: 'verbose',
   }
   for (const key of KEYS) {
@@ -136,6 +165,10 @@ test('the expectation text is specific per type', () => {
   assert.equal(expectationOf('stallMs'), 'an integer between 500 and 600000')
   assert.equal(expectationOf('enabled'), 'a boolean (true or false)')
   assert.equal(expectationOf('logLevel'), 'one of "silent" | "error" | "warn" | "info" | "debug"')
+  assert.equal(
+    expectationOf('stepPanelAccent'),
+    'a string matching /^#[0-9a-fA-F]{6}$/',
+  )
   assert.equal(expectationOf('nope'), 'a known option')
 })
 
@@ -204,7 +237,8 @@ test('README documents every option with its type, default, range and effect', a
     assert.ok(cells, `README has no table row for ${key}`)
     const [type, defaultCell, range] = cells
     const rule = SPEC[key]
-    assert.ok(type.includes(rule.type === 'boolean' ? 'boolean' : rule.type === 'integer' ? 'number' : 'enum'), `${key} type cell`)
+    const typeWord = rule.type === 'boolean' ? 'boolean' : rule.type === 'integer' ? 'number' : rule.type === 'string' ? 'string' : 'enum'
+    assert.ok(type.includes(typeWord), `${key} type cell`)
     assert.ok(defaultCell.includes(String(rule.default)), `${key} default cell`)
     if (rule.type === 'integer') {
       assert.ok(range.includes(String(rule.min)) && range.includes(String(rule.max)), `${key} range cell`)

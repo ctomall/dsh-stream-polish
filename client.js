@@ -42,7 +42,16 @@ window.__ModuleLoader__.load({
     const GLOBAL_NAME = '__DSH_STREAM_POLISH__'
 
     /** Wire shape version this half understands. */
-    const WIRE_VERSION = 2
+    const WIRE_VERSION = 3
+
+    /** Target-language tags accepted by the reasoning translator; mirrors `config.js`. */
+    const LANGUAGE_PATTERN = /^(?:auto|[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{1,8})*)$/
+
+    /** Six-digit hex colours accepted by the step panel accent option; mirrors `config.js`. */
+    const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
+
+    /** Translation services the Host route accepts; mirrors `config.js`. */
+    const TRANSLATION_PROVIDERS = ['bing', 'google']
 
     /** localStorage key holding this browser's overrides. */
     const STORAGE_KEY = 'dsh.stream-polish.settings'
@@ -78,6 +87,17 @@ window.__ModuleLoader__.load({
       runStrip: { type: 'boolean', default: true },
       showElapsed: { type: 'boolean', default: true },
       showActivity: { type: 'boolean', default: true },
+      stepPanel: { type: 'boolean', default: true },
+      stepPanelRows: { type: 'integer', default: 5, min: 1, max: 20 },
+      stepPanelAccent: { type: 'string', default: '#4f8cff', pattern: COLOR_PATTERN },
+      stepPanelMotion: { type: 'boolean', default: true },
+      stepPanelPhaseColors: { type: 'boolean', default: true },
+      replaceToolRows: { type: 'boolean', default: false },
+      toolCardPolish: { type: 'boolean', default: true },
+      translation: { type: 'boolean', default: false },
+      translationProvider: { type: 'enum', default: 'bing', values: TRANSLATION_PROVIDERS },
+      translationTargetLanguage: { type: 'string', default: 'zh-CN', pattern: LANGUAGE_PATTERN },
+      translationTimeoutMs: { type: 'integer', default: 8000, min: 1000, max: 30000 },
       logLevel: { type: 'enum', default: 'warn', values: LOG_LEVELS },
     }
 
@@ -107,6 +127,7 @@ window.__ModuleLoader__.load({
       if (rule === undefined) return 'a known option'
       if (rule.type === 'boolean') return 'a boolean (true or false)'
       if (rule.type === 'integer') return 'an integer between ' + rule.min + ' and ' + rule.max
+      if (rule.type === 'string') return 'a string matching ' + String(rule.pattern)
       return 'one of ' + (rule.values ?? []).map((value) => '"' + value + '"').join(' | ')
     }
 
@@ -141,6 +162,7 @@ window.__ModuleLoader__.load({
       if (rule === undefined) return false
       if (rule.type === 'boolean') return typeof value === 'boolean'
       if (rule.type === 'integer') return Number.isInteger(value) && value >= rule.min && value <= rule.max
+      if (rule.type === 'string') return typeof value === 'string' && rule.pattern.test(value)
       return typeof value === 'string' && (rule.values ?? []).includes(value)
     }
 
@@ -170,6 +192,55 @@ window.__ModuleLoader__.load({
         return config !== null && typeof config === 'object' && !Array.isArray(config) ? config : undefined
       } catch {
         return undefined
+      }
+    }
+
+    /**
+     * Read the Host's optional-capability snapshot from the same wire payload.
+     *
+     * A Host without the optional `translator` service still publishes the row;
+     * `translation.available` is then false and the reasoning body keeps the
+     * original text. A missing or foreign payload fails closed.
+     * @returns {{ translation: { available: boolean, maxTextChars: number | null } }} capability facts.
+     */
+    function readCapabilities() {
+      const fallback = { translation: { available: false, maxTextChars: null } }
+      try {
+        const wire = globalThis[GLOBAL_NAME]
+        if (wire === null || typeof wire !== 'object' || wire.version !== WIRE_VERSION) return fallback
+        const capabilities = wire.capabilities
+        if (capabilities === null || typeof capabilities !== 'object') return fallback
+        const translation = capabilities.translation
+        if (translation === null || typeof translation !== 'object') return fallback
+        return {
+          translation: {
+            available: translation.available === true,
+            maxTextChars: Number.isInteger(translation.maxTextChars) && translation.maxTextChars > 0
+              ? translation.maxTextChars
+              : null,
+          },
+        }
+      } catch {
+        return fallback
+      }
+    }
+
+    /**
+     * Read the wire version this page was served with.
+     *
+     * A page served by an older Host half keeps working from the Client's own
+     * defaults, but translation routes and capability facts only exist in v3;
+     * the settings page uses this to explain why the switch would be inert.
+     * @returns {number | null} the served version, when recognizable.
+     */
+    function readWireVersion() {
+      try {
+        const wire = globalThis[GLOBAL_NAME]
+        return wire !== null && typeof wire === 'object' && Number.isInteger(wire.version)
+          ? wire.version
+          : null
+      } catch {
+        return null
       }
     }
 
@@ -353,6 +424,10 @@ window.__ModuleLoader__.load({
       defaults: DEFAULTS,
       issues: layers.issues,
       store,
+      /** Pure projections the self-tests drive without a DOM. */
+      buildSteps,
+      stablePrefix,
+      rowDuration,
     }
 
     /** Subscribe a component to the settings store. */
@@ -403,6 +478,65 @@ window.__ModuleLoader__.load({
       'settings.caretPeriodMs': '光标呼吸周期',
       'settings.settleMs': '落定淡出时长',
       'settings.stallMs': '停滞判定阈值',
+      'settings.steps': '步骤面板',
+      'settings.stepsNote': '输入框上方逐条显示本轮动作、对象、状态与用时',
+      'settings.stepPanel': '显示步骤面板',
+      'settings.stepPanelHint': '关闭后不挂载步骤列表，运行胶囊不受影响',
+      'settings.stepPanelRows': '可见步骤数',
+      'settings.stepPanelRowsHint': '更早的步骤折叠成一行计数',
+      'settings.stepPanelAccent': '强调色',
+      'settings.stepPanelAccentHint': '六位十六进制，例如 #4f8cff',
+      'settings.stepPanelMotion': '步骤动效',
+      'settings.stepPanelMotionHint': '新增步骤淡入并轻微上移；系统要求减少动态效果时自动关闭',
+      'settings.stepPanelPhaseColors': '阶段着色',
+      'settings.stepPanelPhaseColorsHint': '思考中性、工具强调、失败红、完成绿',
+      'settings.toolCardPolish': '工具卡美化',
+      'settings.toolCardPolishHint': '给原生工具行加圆角、描边、悬停和运行/失败状态色；只改绘制，不改宽高与点击区',
+      'settings.replaceToolRows': '替换工具行',
+      'settings.replaceToolRowsHint': '开启且面板可见时隐藏正文里的原生工具行；关闭即恢复。工具结果、diff 和命令输出将不再显示在原位。',
+      'settings.translation': '思考翻译',
+      'settings.translationNote': '把展开的思考内容机器翻译为下方语言',
+      'settings.translationEnabled': '启用思考翻译',
+      'settings.translationEnabledHint': '展开思考后才发送；关闭、切换语言或卸载插件会取消未完成请求',
+      'settings.translationProvider': '翻译服务',
+      'settings.translationProviderHint': 'Bing 与 Google 都是匿名端点，可能限流或不可用',
+      'settings.translationTargetLanguage': '目标语言',
+      'settings.translationTargetLanguageHint': 'auto 跟随界面语言；也可填写 zh-CN、en、ja 等标签',
+      'settings.translationTimeoutMs': '翻译超时',
+      'settings.translationPrivacy': '展开的思考内容会发送给所选翻译服务，可能包含私有代码或对话细节；原文始终保留在同一位置。',
+      'settings.translationUnavailable': '本部署没有挂载 translator 服务，翻译开关不会生效。',
+      'settings.translationStaleHost': 'Host 半仍是旧版本（未重启/未重载），翻译路由与能力尚未下发；重启 dsh 或停用再启用本插件后生效。',
+      'step.title': '本轮步骤',
+      'step.earlier': '更早 {n} 条',
+      'step.empty': '本轮还没有步骤',
+      'step.thinking': '思考',
+      'step.reply': '回复',
+      'step.status.running': '进行中',
+      'step.status.done': '完成',
+      'step.status.error': '失败',
+      'step.status.pending': '准备中',
+      'step.tool.bash': '运行命令',
+      'step.tool.read': '读取文件',
+      'step.tool.write': '写入文件',
+      'step.tool.edit': '编辑文件',
+      'step.tool.grep': '搜索代码',
+      'step.tool.glob': '查找文件',
+      'step.tool.websearch': '搜索网页',
+      'step.tool.webfetch': '访问网页',
+      'step.tool.subagent': '子智能体',
+      'translate.viewOriginal': '查看原文',
+      'translate.viewTranslation': '查看译文',
+      'translate.translating': '正在翻译思考内容',
+      'translate.failed': '翻译暂不可用，已显示原文',
+      'translate.unavailable': '翻译服务不可用',
+      'translate.retry': '重试',
+      'translate.tail': '待译片段保留原文',
+      'copy': '复制',
+      'copied': '已复制',
+      'codeTitle': '代码块',
+      'wrap': '自动换行',
+      'unwrap': '不换行',
+      'footnotes': '脚注',
       'settings.logLevel': '日志级别',
       'settings.logLevelHint': '合法配置下默认完全静默',
       'settings.reset': '恢复默认',
@@ -480,6 +614,65 @@ window.__ModuleLoader__.load({
       'settings.caretPeriodMs': 'Caret breathing period',
       'settings.settleMs': 'Settle fade duration',
       'settings.stallMs': 'Stall threshold',
+      'settings.steps': 'Step panel',
+      'settings.stepsNote': 'One line per this-turn action, object, state, and duration above the composer',
+      'settings.stepPanel': 'Show step panel',
+      'settings.stepPanelHint': 'Off unmounts the step list; the run capsule is unaffected',
+      'settings.stepPanelRows': 'Visible steps',
+      'settings.stepPanelRowsHint': 'Earlier steps fold into one counted line',
+      'settings.stepPanelAccent': 'Accent colour',
+      'settings.stepPanelAccentHint': 'Six-digit hex, for example #4f8cff',
+      'settings.stepPanelMotion': 'Step motion',
+      'settings.stepPanelMotionHint': 'New steps fade and lift in; reduced-motion turns this off',
+      'settings.stepPanelPhaseColors': 'Phase colours',
+      'settings.stepPanelPhaseColorsHint': 'Neutral thinking, accent tools, red failures, green completion',
+      'settings.toolCardPolish': 'Tool card polish',
+      'settings.toolCardPolishHint': 'Rounded surface, hairline, hover, and running/failed state tint for native tool rows; paint only, no layout change',
+      'settings.replaceToolRows': 'Replace tool rows',
+      'settings.replaceToolRowsHint': 'While the panel is visible, hide native transcript tool rows; turning it off restores them. Tool results, diffs, and command output stop rendering in place.',
+      'settings.translation': 'Reasoning translation',
+      'settings.translationNote': 'Machine-translate expanded reasoning into the language below',
+      'settings.translationEnabled': 'Enable reasoning translation',
+      'settings.translationEnabledHint': 'Sends only after expansion; closing, changing language, or unloading cancels pending requests',
+      'settings.translationProvider': 'Translation service',
+      'settings.translationProviderHint': 'Bing and Google are anonymous endpoints and may rate-limit or fail',
+      'settings.translationTargetLanguage': 'Target language',
+      'settings.translationTargetLanguageHint': 'auto follows the UI language; zh-CN, en, ja and other tags also work',
+      'settings.translationTimeoutMs': 'Translation timeout',
+      'settings.translationPrivacy': 'Expanded reasoning is sent to the selected service and may contain private code or conversation details; the original stays in place.',
+      'settings.translationUnavailable': 'This deployment mounted no translator service, so the switch has no effect.',
+      'settings.translationStaleHost': 'The Host half is still the old build (not restarted/reloaded), so translation routes and capabilities are missing; restart dsh or toggle this plugin off and on.',
+      'step.title': 'This turn',
+      'step.earlier': '{n} earlier',
+      'step.empty': 'No steps in this turn yet',
+      'step.thinking': 'Thinking',
+      'step.reply': 'Reply',
+      'step.status.running': 'running',
+      'step.status.done': 'done',
+      'step.status.error': 'failed',
+      'step.status.pending': 'preparing',
+      'step.tool.bash': 'Run command',
+      'step.tool.read': 'Read file',
+      'step.tool.write': 'Write file',
+      'step.tool.edit': 'Edit file',
+      'step.tool.grep': 'Search code',
+      'step.tool.glob': 'Find files',
+      'step.tool.websearch': 'Search web',
+      'step.tool.webfetch': 'Open page',
+      'step.tool.subagent': 'Subagent',
+      'translate.viewOriginal': 'View original',
+      'translate.viewTranslation': 'View translation',
+      'translate.translating': 'Translating reasoning',
+      'translate.failed': 'Translation unavailable; showing the original',
+      'translate.unavailable': 'Translation service unavailable',
+      'translate.retry': 'Retry',
+      'translate.tail': 'The unfinished tail keeps the original',
+      'copy': 'Copy',
+      'copied': 'Copied',
+      'codeTitle': 'Code block',
+      'wrap': 'Wrap lines',
+      'unwrap': 'Unwrap lines',
+      'footnotes': 'Footnotes',
       'settings.logLevel': 'Log level',
       'settings.logLevelHint': 'A valid config stays silent at the default level',
       'settings.reset': 'Reset',
@@ -790,6 +983,117 @@ window.__ModuleLoader__.load({
         parts.push('@media (forced-colors:active){.dshRS_pill{border-color:CanvasText;background:Canvas;color:CanvasText}.dshRS_dot{background:Highlight}}')
       }
 
+      if (s.toolCardPolish) {
+        // Paint-only polish for the native tool rows: inset hairline and a
+        // faint surface, no border/padding, so width, hit area, and expanded
+        // height are unchanged. `:has` reads the row's own aria-expanded.
+        const tool = ':where([data-chat-flow] [data-tool])'
+        parts.push(tool + '{border-radius:10px;'
+          + 'background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 22%,transparent);'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent);'
+          + 'transition:background-color .16s ease,box-shadow .16s ease}')
+        parts.push('@media (hover:hover){' + tool + ':hover{'
+          + 'background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 62%,transparent);'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 85%,transparent),'
+          + '0 2px 10px color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent)}}')
+        parts.push(tool + ':has([aria-expanded="true"]){'
+          + 'background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 52%,transparent);'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent)}')
+        parts.push(tool + '[data-state="running"],' + tool + '[data-state="pending"]{'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-state-business-primary) 42%,transparent)}')
+        parts.push(tool + '[data-state="error"]{'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent)}')
+        parts.push('@media (prefers-reduced-motion:reduce){' + tool + '{transition:none}}')
+        parts.push('@media (forced-colors:active){' + tool + '{box-shadow:none;background:Canvas}}')
+      }
+
+      if (s.stepPanel) {
+        // The panel lives in the composer stack, in flow above the input, so
+        // it never covers the transcript (an absolute card overlapped the last
+        // tool card). The list itself scrolls rather than growing without
+        // bound.
+        // Match the composer card exactly: the stack owns the side clearance,
+        // the card owns the same max-width as the input surface, so the panel
+        // and the input box share one right/left edge.
+        parts.push('.dshST_root{box-sizing:border-box;width:100%;display:flex;justify-content:center;'
+          + 'padding:0 var(--dsh-composer-side-clearance,16px) 4px;pointer-events:none}')
+        parts.push('.dshST_card{--dshST-accent:' + s.stepPanelAccent + ';box-sizing:border-box;width:100%;'
+          + 'max-width:var(--dsh-composer-card-max-width,680px);margin:0 auto;'
+          + 'pointer-events:auto;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;'
+          + 'color:var(--dsw-alias-label-secondary);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 2px);'
+          + 'background:color-mix(in srgb,var(--dsw-alias-bg-base) 90%,transparent);'
+          + 'box-shadow:0 10px 28px color-mix(in srgb,var(--dsw-alias-label-primary) 10%,transparent);'
+          + 'backdrop-filter:blur(12px)}')
+        parts.push('.dshST_head{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);'
+          + 'align-items:center;gap:8px;padding:6px 10px;'
+          + 'border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 60%,transparent);'
+          + 'color:var(--dsw-alias-label-tertiary);font-size:11px}')
+        parts.push('.dshST_title{font-weight:600;letter-spacing:.02em;min-width:0;overflow:hidden;'
+          + 'text-overflow:ellipsis;white-space:nowrap}')
+        parts.push('.dshST_more,.dshST_time{font-variant-numeric:tabular-nums}')
+        parts.push('.dshST_more{justify-self:end;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
+        parts.push('.dshST_live{display:inline-flex;align-items:center;gap:6px;justify-self:center;flex:none;'
+          + 'max-width:100%;overflow:hidden;color:var(--dsw-alias-label-tertiary);'
+          + 'font-variant-numeric:tabular-nums;white-space:nowrap}')
+        parts.push('.dshST_livePhase{max-width:180px;overflow:hidden;text-overflow:ellipsis;'
+          + 'color:var(--dsw-alias-label-secondary);font-weight:500}')
+        parts.push('.dshST_liveSep{color:var(--dsw-alias-separator-primary)}')
+        parts.push('.dshST_liveTime,.dshST_liveActivity{min-width:0;overflow:hidden;text-overflow:ellipsis}')
+        parts.push('@keyframes dshST_pulse{0%,100%{opacity:1}50%{opacity:.45}}')
+        parts.push('.dshST_liveDot{width:6px;height:6px;border-radius:50%;flex:none;'
+          + 'background:var(--dsw-alias-state-business-primary);animation:dshST_pulse 1.8s ease-in-out infinite}')
+        parts.push('.dshST_live[data-stalled] .dshST_liveDot{background:var(--dsw-alias-state-warn-primary);animation:none}')
+        parts.push('.dshST_live[data-stalled] .dshST_liveActivity{color:var(--dsw-alias-state-warn-primary)}')
+        parts.push('@media (prefers-reduced-motion:reduce){.dshST_liveDot{animation:none}}')
+        // While the panel is on screen it owns the capsule; the standalone
+        // absolute strip would otherwise land on the panel's header.
+        if (s.runStrip) parts.push('html[data-dsh-sp-panel-visible] .dshRS_root{display:none!important}')
+        parts.push('.dshST_rows{display:flex;flex-direction:column;gap:1px;max-height:40vh;overflow-y:auto;padding:4px;overscroll-behavior:contain}')
+        parts.push('.dshST_row{display:flex;align-items:center;gap:8px;min-width:0;padding:3px 8px;border-radius:8px;line-height:18px}')
+        parts.push('.dshST_dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dsw-alias-label-tertiary)}')
+        parts.push('.dshST_action{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+          + 'color:var(--dsw-alias-label-primary);font-weight:500}')
+        parts.push('.dshST_object{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+          + 'color:var(--dsw-alias-label-tertiary);font-family:var(--dsh-font-mono,ui-monospace,monospace)}')
+        parts.push('.dshST_state{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px}')
+        parts.push('.dshST_time{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px}')
+        if (s.stepPanelPhaseColors) {
+          parts.push('.dshST_row[data-kind="thinking"] .dshST_dot{background:var(--dsw-alias-label-tertiary)}')
+          parts.push('.dshST_row[data-kind="reply"] .dshST_dot{background:var(--dsw-alias-label-secondary)}')
+          parts.push('.dshST_row[data-kind="tool"][data-state="running"] .dshST_dot,'
+            + '.dshST_row[data-kind="tool"][data-state="pending"] .dshST_dot{background:var(--dshST-accent)}')
+          parts.push('.dshST_row[data-state="done"] .dshST_dot{background:var(--dsw-alias-state-success-primary)}')
+          parts.push('.dshST_row[data-state="error"] .dshST_dot{background:var(--dsw-alias-state-error-primary)}')
+          parts.push('.dshST_row[data-state="running"] .dshST_state,.dshST_row[data-state="pending"] .dshST_state{color:var(--dshST-accent)}')
+          parts.push('.dshST_row[data-state="error"] .dshST_state{color:var(--dsw-alias-state-error-primary)}')
+        }
+        if (s.stepPanelMotion) {
+          parts.push('@keyframes dshST_in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}')
+          parts.push('.dshST_row{animation:dshST_in 160ms cubic-bezier(.2,.7,.3,1)}')
+          parts.push('@media (prefers-reduced-motion:reduce){.dshST_row{animation:none}}')
+        }
+        parts.push('@media (forced-colors:active){.dshST_card{border-color:CanvasText;background:Canvas;color:CanvasText}'
+          + '.dshST_dot{background:Highlight}}')
+        if (s.replaceToolRows) {
+          parts.push('html[data-dsh-sp-tools-hidden] [data-chat-flow] [data-tool]{display:none!important}')
+        }
+      }
+
+      if (s.translation) {
+        // Toolbar above the expanded reasoning body. The body itself is Chat's
+        // own compact Markdown Factory, so no typography is duplicated here.
+        parts.push('.dshTR_root{display:block}')
+        parts.push('.dshTR_bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:2px 0 4px;'
+          + 'color:var(--dsw-alias-label-tertiary);font-size:11px}')
+        parts.push('.dshTR_toggle{appearance:none;border:0;background:none;padding:1px 2px;border-radius:5px;'
+          + 'color:var(--dsw-alias-label-tertiary);font:inherit;cursor:pointer}')
+        parts.push('.dshTR_toggle:hover{color:var(--dsw-alias-label-secondary);text-decoration:underline}')
+        parts.push('.dshTR_toggle:disabled{opacity:.55;cursor:default;text-decoration:none}')
+        parts.push('.dshTR_note{color:var(--dsw-alias-label-tertiary)}')
+        parts.push('.dshTR_root[data-state="failed"] .dshTR_note{color:var(--dsw-alias-state-warn-primary)}')
+        parts.push('.dshTR_root[data-state="unavailable"] .dshTR_note{color:var(--dsw-alias-state-warn-primary)}')
+      }
+
       return parts.join('')
     }
 
@@ -843,6 +1147,9 @@ window.__ModuleLoader__.load({
       '.dshSPS_input[aria-invalid=true]{border-color:var(--dsw-alias-state-error-primary)}',
       '.dshSPS_input:disabled{cursor:default;color:var(--dsw-alias-label-tertiary)}',
       '.dshSPS_unit{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_textWrap,.dshSPS_colorWrap{display:inline-flex;align-items:center;gap:6px;min-width:0}',
+      '.dshSPS_inputText{width:100%;min-width:0;text-align:left;font-family:ui-monospace,monospace;font-size:12px}',
+      '.dshSPS_swatch{flex:none;width:16px;height:16px;border-radius:4px;border:.5px solid var(--dsw-alias-border-l2)}',
 
       '.dshSPS_foot{display:flex;flex-wrap:wrap;align-items:center;gap:12px}',
       '.dshSPS_button{height:28px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:26px;cursor:pointer}',
@@ -961,6 +1268,51 @@ window.__ModuleLoader__.load({
           disabled: props.disabled,
           onChange: props.onChange,
         }),
+        h('span', { className: 'dshSPS_tileHint' }, props.hint))
+    }
+
+    /**
+     * One pattern-validated text field inside the card grid.
+     * @param {{ title: string, hint: string, option: string, value: string, t: Function, disabled?: boolean, swatch?: boolean, onChange: Function }} props - field state.
+     * @returns {object} the card element.
+     */
+    function SettingsTextCard(props) {
+      const rule = SPEC[props.option]
+      const [draft, setDraft] = React.useState(String(props.value))
+      React.useEffect(() => {
+        setDraft(String(props.value))
+      }, [props.value])
+      const valid = rule.pattern.test(draft)
+      return h('div', {
+        className: 'dshSPS_tile',
+        'data-off': props.disabled === true ? 'true' : 'false',
+      },
+        h('span', { className: 'dshSPS_tileTitle', title: props.title }, props.title),
+        h('span', { className: props.swatch === true ? 'dshSPS_colorWrap' : 'dshSPS_textWrap' },
+          props.swatch === true
+            ? h('span', {
+              className: 'dshSPS_swatch',
+              'aria-hidden': true,
+              style: { background: valid ? draft : String(props.value) },
+            })
+            : null,
+          h('input', {
+            className: 'dshSPS_input dshSPS_inputText',
+            type: 'text',
+            value: draft,
+            spellCheck: false,
+            autoComplete: 'off',
+            disabled: props.disabled === true ? true : undefined,
+            'aria-label': props.title,
+            'aria-invalid': valid ? undefined : 'true',
+            onChange: (event) => {
+              setDraft(event.target.value)
+              if (rule.pattern.test(event.target.value)) props.onChange(event.target.value)
+            },
+            onBlur: () => {
+              if (!valid) setDraft(String(props.value))
+            },
+          })),
         h('span', { className: 'dshSPS_tileHint' }, props.hint))
     }
 
@@ -1314,7 +1666,8 @@ window.__ModuleLoader__.load({
               toggle('settleFade', !settings.enabled || caretOff),
               toggle('runStrip', !settings.enabled),
               toggle('showElapsed', !settings.enabled || stripOff),
-              toggle('showActivity', !settings.enabled || stripOff))),
+              toggle('showActivity', !settings.enabled || stripOff),
+              toggle('toolCardPolish', !settings.enabled))),
 
           h(SettingsSection, { title: t('settings.timing'), note: t('settings.timingNote') },
             h('div', { className: 'dshSPS_grid' },
@@ -1322,6 +1675,89 @@ window.__ModuleLoader__.load({
               field('caretPeriodMs', !settings.enabled || caretOff),
               field('settleMs', !settings.enabled || caretOff || !settings.settleFade),
               field('stallMs', !settings.enabled))),
+
+          h(SettingsSection, { title: t('settings.steps'), note: t('settings.stepsNote') },
+            h(SettingsMaster, {
+              title: t('settings.stepPanel'),
+              hint: t('settings.stepPanelHint'),
+              label: t('settings.stepPanel'),
+              checked: settings.stepPanel,
+              onChange: (next) => update({ stepPanel: next }),
+            }),
+            h('div', { className: 'dshSPS_grid' },
+              h(SettingsNumberCard, {
+                key: 'stepPanelRows',
+                title: t('settings.stepPanelRows'),
+                hint: t('settings.stepPanelRowsHint'),
+                option: 'stepPanelRows',
+                value: settings.stepPanelRows,
+                t,
+                disabled: !settings.enabled || !settings.stepPanel,
+                onChange: (next) => update({ stepPanelRows: next }),
+              }),
+              h(SettingsTextCard, {
+                key: 'stepPanelAccent',
+                title: t('settings.stepPanelAccent'),
+                hint: t('settings.stepPanelAccentHint'),
+                option: 'stepPanelAccent',
+                value: settings.stepPanelAccent,
+                swatch: true,
+                t,
+                disabled: !settings.enabled || !settings.stepPanel,
+                onChange: (next) => update({ stepPanelAccent: next }),
+              }),
+              toggle('stepPanelMotion', !settings.enabled || !settings.stepPanel),
+              toggle('stepPanelPhaseColors', !settings.enabled || !settings.stepPanel),
+              toggle('replaceToolRows', !settings.enabled || !settings.stepPanel))),
+
+          h(SettingsSection, { title: t('settings.translation'), note: t('settings.translationNote') },
+            h(SettingsMaster, {
+              title: t('settings.translationEnabled'),
+              hint: t('settings.translationEnabledHint'),
+              label: t('settings.translationEnabled'),
+              checked: settings.translation,
+              onChange: (next) => update({ translation: next }),
+            }),
+            readWireVersion() !== WIRE_VERSION
+              ? h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationStaleHost'))
+              : readCapabilities().translation.available
+                ? null
+                : h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationUnavailable')),
+            h('div', { className: 'dshSPS_line' },
+              h('span', { className: 'dshSPS_lineHint' }, t('settings.translationPrivacy'))),
+            h('div', { className: 'dshSPS_grid' },
+              h('div', { className: 'dshSPS_tile' },
+                h('span', { className: 'dshSPS_tileTitle' }, t('settings.translationProvider')),
+                h(SettingsSegments, {
+                  group: 'translationProvider',
+                  label: t('settings.translationProvider'),
+                  ids: TRANSLATION_PROVIDERS,
+                  value: settings.translationProvider,
+                  t,
+                  labelFor: (id) => id,
+                  onChange: (next) => update({ translationProvider: next }),
+                }),
+                h('span', { className: 'dshSPS_tileHint' }, t('settings.translationProviderHint'))),
+              h(SettingsTextCard, {
+                key: 'translationTargetLanguage',
+                title: t('settings.translationTargetLanguage'),
+                hint: t('settings.translationTargetLanguageHint'),
+                option: 'translationTargetLanguage',
+                value: settings.translationTargetLanguage,
+                t,
+                disabled: !settings.translation,
+                onChange: (next) => update({ translationTargetLanguage: next }),
+              }),
+              h(SettingsNumberCard, {
+                key: 'translationTimeoutMs',
+                title: t('settings.translationTimeoutMs'),
+                hint: t('settings.range', { min: SPEC.translationTimeoutMs.min, max: SPEC.translationTimeoutMs.max }),
+                option: 'translationTimeoutMs',
+                value: settings.translationTimeoutMs,
+                t,
+                disabled: !settings.translation,
+                onChange: (next) => update({ translationTimeoutMs: next }),
+              }))),
 
           h(SettingsSection, { title: t('settings.log') },
             h(SettingsLine, {
@@ -1347,6 +1783,662 @@ window.__ModuleLoader__.load({
             }, t('settings.reset')),
             h('span', { className: 'dshSPS_footHint' }, t('settings.footHint'))))
       }
+    }
+
+    /* ------------------------------------------------------------------ *
+     * This-turn step panel
+     *
+     * One `conversation.input.dock` entry renders a compact list above the
+     * composer. It reads the Chat snapshot through the session-scoped
+     * `useChat` standard prop and never touches renderer state: reasoning and
+     * reply blocks come from materialized Assistant nodes, tool rows from
+     * Tool-result nodes plus the live `runningCalls` slice, and running
+     * durations tick once a second.
+     * ------------------------------------------------------------------ */
+
+    /** Tool-argument fields used as the row's "object", most specific first. */
+    const ARG_KEYS = ['command', 'file_path', 'path', 'pattern', 'query', 'url', 'description', 'prompt', 'agent', 'name']
+
+    /** Flatten one value into a bounded single line. */
+    function clip(text, limit) {
+      const flat = String(text ?? '').replace(/\s+/g, ' ').trim()
+      return flat.length > limit ? flat.slice(0, limit - 1) + '…' : flat
+    }
+
+    /** First non-empty line of a reasoning or reply block. */
+    function firstLineOf(text, limit) {
+      for (const line of String(text ?? '').split(/\r?\n/)) {
+        if (line.trim() !== '') return clip(line, limit)
+      }
+      return ''
+    }
+
+    /** Read one readable string out of a lazy tool-argument view. */
+    function argText(args, keys, limit) {
+      if (args === null || typeof args !== 'object') return ''
+      for (const key of keys) {
+        try {
+          const value = typeof args.text === 'function' ? args.text(key) : undefined
+          if (typeof value === 'string' && value.trim() !== '') return clip(value, limit)
+          const prefix = typeof args.textPrefix === 'function' ? args.textPrefix(key, limit) : undefined
+          if (typeof prefix === 'string' && prefix.trim() !== '') return clip(prefix, limit)
+        } catch {
+          // A streaming view that cannot answer this field simply has no object.
+        }
+      }
+      return ''
+    }
+
+    /** Format one row's duration without inventing precision. */
+    function rowDuration(ms) {
+      if (!Number.isFinite(ms) || ms < 0) return ''
+      if (ms < 1000) return Math.round(ms) + 'ms'
+      if (ms < 60000) return (ms / 1000).toFixed(1) + 's'
+      return clock(ms)
+    }
+
+    /** Resolve the turn a materialized node belongs to. */
+    function nodeTurn(node) {
+      if (node === null || typeof node !== 'object') return undefined
+      if (typeof node.turn === 'number') return node.turn
+      const location = node.location
+      if (location === null || typeof location !== 'object') return undefined
+      if (location.kind === 'step' || location.kind === 'turn') return location.turn?.turn
+      return undefined
+    }
+
+    /** Step start timestamp from the Chat timeline, when the window loaded it. */
+    function stepStartOf(turnLocation, step) {
+      if (turnLocation === null || turnLocation === undefined) return undefined
+      const location = Array.isArray(turnLocation.steps)
+        ? turnLocation.steps.find((candidate) => candidate.step === step)
+        : undefined
+      const time = location?.start?.time
+      return typeof time === 'number' ? time : undefined
+    }
+
+    /**
+     * Project the latest turn into panel rows.
+     *
+     * Rows are ordered by Session seq (materialized nodes) and start time (live
+     * calls). A finalized Assistant contributes its reasoning and reply blocks;
+     * a live Assistant prefix contributes the same kinds with `running`. Tool
+     * results carry their exact call→result duration; live calls tick with the
+     * panel clock. The visible count comes from `stepPanelRows`; older rows
+     * collapse into one counted line instead of disappearing silently.
+     * @param {object} snapshot - Chat snapshot.
+     * @param {Record<string, unknown>} settings - resolved settings.
+     * @param {number} now - current clock for live rows.
+     * @returns {{ turn: number | null, rows: Array<object>, hidden: number }} projection.
+     */
+    function buildSteps(snapshot, settings, now) {
+      const order = snapshot?.timeline?.turnOrder
+      if (!Array.isArray(order) || order.length === 0) return { turn: null, rows: [], hidden: 0 }
+      const turn = order[order.length - 1]
+      const turns = snapshot.timeline.turns
+      const turnLocation = turns !== null && typeof turns === 'object' && typeof turns.get === 'function'
+        ? turns.get(turn)
+        : turns?.[turn]
+      const legacy = snapshot.legacy ?? {}
+      const rows = []
+      const seenCalls = new Set()
+
+      /** Append one finalized Assistant step's reasoning and reply blocks. */
+      const pushAssistant = (blocks, anchor, duration, status, idPrefix) => {
+        for (const block of blocks ?? []) {
+          if (block.kind !== 'reasoning' && block.kind !== 'text') continue
+          const object = firstLineOf(block.text, block.kind === 'reasoning' ? 56 : 72)
+          if (object === '') continue
+          rows.push({
+            id: idPrefix + '-' + rows.length,
+            order: anchor,
+            kind: block.kind === 'reasoning' ? 'thinking' : 'reply',
+            action: block.kind === 'reasoning' ? 'step.thinking' : 'step.reply',
+            object,
+            status,
+            duration,
+          })
+        }
+      }
+
+      /** Append one Tool root, settled or live. */
+      const pushTool = (root, anchor, idPrefix) => {
+        if (root === null || typeof root !== 'object') return
+        if (root.kind === 'tool-result') {
+          if (typeof root.callId === 'string') seenCalls.add(root.callId)
+          const object = argText(root.args, ARG_KEYS, 72)
+            || (typeof root.call?.argsRaw === 'string' ? clip(root.call.argsRaw, 72) : '')
+            || clip(root.name, 72)
+          rows.push({
+            id: idPrefix,
+            order: anchor,
+            kind: 'tool',
+            action: typeof root.name === 'string' && root.name !== '' ? root.name : 'tool',
+            object,
+            status: root.isError ? 'error' : 'done',
+            duration: typeof root.callTime === 'number' ? root.time - root.callTime : null,
+          })
+          return
+        }
+        if (typeof root.callId === 'string') seenCalls.add(root.callId)
+        rows.push({
+          id: idPrefix,
+          order: anchor,
+          kind: 'tool',
+          action: typeof root.name === 'string' && root.name !== '' ? root.name : 'tool',
+          object: argText(root.args, ARG_KEYS, 72),
+          status: root.phase === 'preparing' ? 'pending' : 'running',
+          duration: typeof root.time === 'number' ? now - root.time : null,
+        })
+      }
+
+      const locations = snapshot.locations
+      const nodes = snapshot.nodes
+      const keys = locations !== undefined && locations !== null && typeof locations.getTurn === 'function'
+        ? locations.getTurn(turn)
+        : []
+      let indexed = false
+
+      if (Array.isArray(keys) && keys.length > 0 && nodes !== undefined && nodes !== null
+        && typeof nodes.get === 'function') {
+        indexed = true
+        for (const key of keys) {
+          const node = nodes.get(key)
+          if (node === null || node === undefined || node.visibility !== 'visible') continue
+          if (node.kind === 'assistant-step') {
+            const data = node.data
+            if (data === null || typeof data !== 'object' || data.status === 'running') continue
+            const timing = data.finalNode?.timing
+            const duration = timing === null || timing === undefined
+              ? null
+              : timing.completedTime - (timing.stepStartTime ?? timing.firstTokenTime ?? timing.completedTime)
+            pushAssistant(data.blocks, node.anchorSeq, duration,
+              data.status === 'interrupted' ? 'error' : 'done', 'n' + node.anchorSeq)
+            continue
+          }
+          if (node.kind === 'tool-call') {
+            pushTool(node.data?.root, node.anchorSeq, 'n' + node.anchorSeq)
+          }
+        }
+      }
+
+      if (!indexed) {
+        // Fallback for a Host that publishes only the legacy slice: attribute
+        // tools through the Assistant tool-call blocks that own their callId.
+        const callTurn = new Map()
+        for (const node of legacy.nodes ?? []) {
+          if (node.kind !== 'assistant') continue
+          for (const block of node.blocks ?? []) {
+            if (block.kind === 'tool-call' && typeof block.callId === 'string') {
+              callTurn.set(block.callId, node.turn)
+            }
+          }
+        }
+        for (const node of legacy.nodes ?? []) {
+          if (node.kind === 'assistant') {
+            if (node.turn !== turn) continue
+            const timing = node.timing
+            const duration = timing === null || timing === undefined
+              ? null
+              : timing.completedTime - (timing.stepStartTime ?? timing.firstTokenTime ?? timing.completedTime)
+            pushAssistant(node.blocks, node.seq, duration, node.interrupted ? 'error' : 'done', 'a' + node.seq)
+            continue
+          }
+          if (node.kind === 'tool-result' && callTurn.get(node.callId) === turn) {
+            pushTool(node, node.seq, 't' + node.seq)
+          }
+        }
+      }
+
+      for (const call of legacy.runningCalls ?? []) {
+        if (call === null || typeof call !== 'object') continue
+        if (typeof call.turn === 'number' && call.turn !== turn) continue
+        if (call.parentCallId !== undefined) continue
+        if (typeof call.callId === 'string' && seenCalls.has(call.callId)) continue
+        pushTool(call, typeof call.time === 'number' ? call.time : now, 'r' + String(call.callId ?? rows.length))
+      }
+
+      const partial = legacy.partial
+      if (partial !== null && partial !== undefined && partial.turn === turn) {
+        const start = stepStartOf(turnLocation, partial.step)
+        const duration = start === undefined ? null : now - start
+        for (const block of partial.blocks ?? []) {
+          if (block.kind !== 'reasoning' && block.kind !== 'text') continue
+          const object = firstLineOf(block.text, block.kind === 'reasoning' ? 56 : 72)
+          if (object === '') continue
+          rows.push({
+            id: 'p' + partial.step + '-' + rows.length,
+            order: Number.MAX_SAFE_INTEGER - 1,
+            kind: block.kind === 'reasoning' ? 'thinking' : 'reply',
+            action: block.kind === 'reasoning' ? 'step.thinking' : 'step.reply',
+            object,
+            status: 'running',
+            duration,
+          })
+        }
+      }
+
+      rows.sort((left, right) => left.order - right.order)
+      const limit = Number.isInteger(settings.stepPanelRows) ? settings.stepPanelRows : 5
+      const hidden = Math.max(0, rows.length - limit)
+      return { turn, rows: rows.slice(hidden), hidden }
+    }
+
+    /** Localize a tool name without inventing a label for an unknown plugin tool. */
+    function toolActionLabel(t, name) {
+      const lower = String(name ?? '').toLowerCase()
+      const key = lower.startsWith('subagent') ? 'step.tool.subagent' : 'step.tool.' + lower
+      const label = t(key)
+      return label === key ? String(name || 'tool') : label
+    }
+
+    /** The compact this-turn step list rendered above the composer. */
+    function StepPanel(props) {
+      const settings = useSettings()
+      const t = typeof props.t === 'function' ? props.t : translate
+      const session = props.session
+      const running = session !== undefined && session.running === true
+      const [now, setNow] = React.useState(Date.now())
+      const [visible, setVisible] = React.useState(running)
+      const useChat = typeof props.useChat === 'function' ? props.useChat : () => undefined
+      // While hidden, select a stable null so token publications do not rebuild
+      // a list nobody can see.
+      const snapshot = useChat((chat) => (visible ? chat : null))
+
+      React.useEffect(() => {
+        if (running) {
+          setVisible(true)
+          return undefined
+        }
+        // Match the run capsule's quiet-exit rule: keep the finished list
+        // readable for a few seconds, then withdraw it from the composer.
+        const timer = window.setTimeout(() => setVisible(false), 8000)
+        return () => window.clearTimeout(timer)
+      }, [running])
+
+      React.useEffect(() => {
+        if (!running) return undefined
+        const timer = window.setInterval(() => setNow(Date.now()), 1000)
+        return () => window.clearInterval(timer)
+      }, [running])
+
+      // Re-render on a phase change between the one-second clock ticks.
+      const [, setRunTick] = React.useState(0)
+      React.useEffect(() => runStore.subscribe(() => setRunTick((value) => value + 1)), [])
+
+      const projected = snapshot === undefined || snapshot === null
+        ? { turn: null, rows: [], hidden: 0 }
+        : buildSteps(snapshot, settings, now)
+      const rendered = visible && projected.rows.length > 0
+
+      // The panel owns the live capsule while it is on screen: hide the
+      // standalone run strip and, when configured, the native tool rows for
+      // exactly as long as the panel is visible. Both return on cleanup.
+      React.useEffect(() => {
+        if (!rendered) return undefined
+        const root = document.documentElement
+        root.setAttribute('data-dsh-sp-panel-visible', '')
+        if (settings.replaceToolRows) root.setAttribute('data-dsh-sp-tools-hidden', '')
+        return () => {
+          root.removeAttribute('data-dsh-sp-panel-visible')
+          root.removeAttribute('data-dsh-sp-tools-hidden')
+        }
+      }, [rendered, settings.replaceToolRows])
+
+      if (!settings.enabled || !settings.stepPanel || !rendered) return null
+
+      const rows = projected.rows.map((row) => h('div', {
+        key: row.id,
+        className: 'dshST_row',
+        'data-kind': row.kind,
+        'data-state': row.status,
+      },
+        h('span', { className: 'dshST_dot', 'aria-hidden': true }),
+        h('span', { className: 'dshST_action' }, row.kind === 'tool'
+          ? toolActionLabel(t, row.action)
+          : t(row.action)),
+        row.object === '' ? null : h('span', { className: 'dshST_object', title: row.object }, row.object),
+        h('span', { className: 'dshST_state' }, t('step.status.' + row.status)),
+        row.duration === null ? null : h('span', { className: 'dshST_time' }, rowDuration(row.duration))))
+
+      // The run capsule's content moves into the title bar while the panel is
+      // visible; the standalone strip is hidden by the attribute above.
+      let capsule = null
+      if (settings.runStrip && running && runStore.running && runStore.sessionId === session.sessionId) {
+        const elapsed = clock(now - runStore.phaseSince)
+        const idle = Math.max(0, now - runStore.lastActivityAt)
+        const stalled = idle >= settings.stallMs
+        const phaseText = runStore.phase === 'tool'
+          ? runStore.tool === 'commands'
+            ? t('phase.commands')
+            : t('phase.tool', { tool: runStore.tool })
+          : runStore.phase === 'writing'
+            ? t('phase.writing')
+            : t('phase.thinking')
+        const activityText = stalled
+          ? t('stall', { n: Math.floor(idle / 1000) })
+          : idle < 2000
+            ? t('activity.now')
+            : idle < 60000
+              ? t('activity.seconds', { n: Math.floor(idle / 1000) })
+              : t('activity.minutes', { m: Math.floor(idle / 60000), n: Math.floor((idle % 60000) / 1000) })
+        const parts = [h('span', { key: 'phase', className: 'dshST_livePhase' }, phaseText)]
+        if (settings.showElapsed) {
+          parts.push(h('span', { key: 'sep1', className: 'dshST_liveSep' }, '·'))
+          parts.push(h('span', { key: 'time', className: 'dshST_liveTime' }, elapsed))
+        }
+        if (settings.showActivity) {
+          parts.push(h('span', { key: 'sep2', className: 'dshST_liveSep' }, '·'))
+          parts.push(h('span', { key: 'activity', className: 'dshST_liveActivity' }, activityText))
+        }
+        capsule = h('span', {
+          className: 'dshST_live',
+          'data-stalled': stalled ? '' : undefined,
+          role: 'status',
+          'aria-live': 'off',
+          'aria-label': [phaseText, settings.showElapsed ? elapsed : null, settings.showActivity ? activityText : null]
+            .filter((part) => part !== null).join(', '),
+        },
+          h('span', { className: 'dshST_liveDot', 'aria-hidden': true }),
+          parts)
+      }
+
+      return h('div', { className: 'dshST_root', 'data-dsh-step-panel': '' },
+        h('div', { className: 'dshST_card', role: 'status', 'aria-live': 'off' },
+          h('div', { className: 'dshST_head' },
+            h('span', { className: 'dshST_title' }, t('step.title')),
+            capsule,
+            projected.hidden > 0
+              ? h('span', { className: 'dshST_more' }, t('step.earlier', { n: projected.hidden }))
+              : null),
+          h('div', { className: 'dshST_rows' }, rows)))
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Reasoning machine translation
+     *
+     * The body slot wrapper renders the original or the translated Markdown
+     * through Chat's own `conversation.chat.reasoning.content` Factory, so
+     * typography, code blocks and the streaming caret stay Chat-owned. Only
+     * complete paragraphs (or a bounded prefix of a long paragraph) are sent;
+     * the unfinished tail always stays original. The view toggle is local and
+     * never remounts the disclosure, so expanded state and streaming survive.
+     * ------------------------------------------------------------------ */
+
+    /** Reject after the Host route's timeout; the route also aborts server-side. */
+    function translationTimeout(ms) {
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(new Error('translation-timeout')), ms)
+      return { signal: controller.signal, cancel: () => window.clearTimeout(timer) }
+    }
+
+    /**
+     * Length of the prefix that is safe to translate.
+     *
+     * Prefer the last completed paragraph; without one, a completed line; for
+     * a long single paragraph, a bounded chunk cut at whitespace. The remaining
+     * tail stays original so streaming never waits on the translator.
+     * @param {string} text - current reasoning text.
+     * @param {number} cursor - already translated source length.
+     * @param {number} maxChars - request limit.
+     * @returns {number} end offset of the translatable prefix.
+     */
+    function stablePrefix(text, cursor, maxChars) {
+      const remaining = text.slice(cursor)
+      const paragraph = remaining.lastIndexOf('\n\n')
+      if (paragraph >= 0) return cursor + paragraph + 2
+      const newline = remaining.lastIndexOf('\n')
+      if (newline > 0) return cursor + newline + 1
+      if (remaining.length >= maxChars) {
+        let cut = Math.max(1, Math.min(maxChars, remaining.length))
+        const space = remaining.lastIndexOf(' ', cut)
+        if (space > cut / 2) cut = space
+        return cursor + cut
+      }
+      return cursor
+    }
+
+    /** Request one fragment; resolve to the text or throw a classified error. */
+    async function requestTranslation(fragment, options) {
+      if (typeof fetch !== 'function') throw new Error('no-fetch')
+      const timeout = translationTimeout(options.timeoutMs)
+      const signal = options.signal === undefined
+        ? timeout.signal
+        : (typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([options.signal, timeout.signal])
+          : options.signal)
+      try {
+        const response = await fetch('./api/stream-polish/translate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          signal,
+          body: JSON.stringify({
+            text: fragment,
+            provider: options.provider,
+            targetLanguage: options.targetLanguage,
+            sessionId: options.sessionId,
+          }),
+        })
+        if (!response.ok) throw new Error('http-' + response.status)
+        const result = await response.json()
+        if (result?.ok !== true) throw new Error(String(result?.code ?? 'failed'))
+        return String(result.text ?? '')
+      } finally {
+        timeout.cancel()
+      }
+    }
+
+    /** Reasoning body wrapper: translated view, original view, and retry. */
+    function TranslationBody(props) {
+      const settings = useSettings()
+      const t = typeof props.t === 'function' ? props.t : translate
+      const source = typeof props.text === 'string'
+        ? props.text
+        : (typeof props.rawText === 'string' ? props.rawText : '')
+      const running = props.running === true
+      const sessionId = typeof props.sessionId === 'string' ? props.sessionId : undefined
+      const [capability, setCapability] = React.useState(() => readCapabilities().translation)
+      const [showOriginal, setShowOriginal] = React.useState(false)
+      const [version, setVersion] = React.useState(0)
+      const [translation, setTranslation] = React.useState({
+        text: '', cursor: 0, pending: false, failed: false, code: null,
+      })
+      const translationRef = React.useRef(translation)
+      const sourceRef = React.useRef(source)
+      const prevSourceRef = React.useRef(source)
+      const configRef = React.useRef({
+        provider: settings.translationProvider,
+        targetLanguage: settings.translationTargetLanguage,
+        timeoutMs: settings.translationTimeoutMs,
+        sessionId,
+        maxChars: capability.maxTextChars ?? 4000,
+        enabled: settings.translation && settings.enabled,
+        available: capability.available,
+      })
+      const abortRef = React.useRef(null)
+      const timerRef = React.useRef(0)
+      const inflightRef = React.useRef(false)
+
+      translationRef.current = translation
+      sourceRef.current = source
+      configRef.current = {
+        provider: settings.translationProvider,
+        targetLanguage: settings.translationTargetLanguage,
+        timeoutMs: settings.translationTimeoutMs,
+        sessionId,
+        maxChars: capability.maxTextChars ?? 4000,
+        enabled: settings.translation && settings.enabled,
+        available: capability.available,
+      }
+
+      /** Ask the Host capability route once per mount; the wire fallback still works. */
+      React.useEffect(() => {
+        let alive = true
+        apiCall('/translation').then((result) => {
+          if (!alive || result?.ok !== true) return
+          setCapability({
+            available: result.available === true,
+            maxTextChars: Number.isInteger(result.maxTextChars) ? result.maxTextChars : null,
+          })
+        })
+        return () => { alive = false }
+      }, [])
+
+      /** Translate as much of the stable prefix as currently exists. */
+      const pump = React.useCallback(() => {
+        if (inflightRef.current) return
+        const config = configRef.current
+        if (!config.enabled || !config.available) return
+        const text = sourceRef.current
+        if (text.trim() === '') return
+        const state = translationRef.current
+        const end = stablePrefix(text, state.cursor, config.maxChars)
+        if (end <= state.cursor) return
+        const chunk = text.slice(state.cursor, Math.min(end, state.cursor + config.maxChars))
+        const nextCursor = state.cursor + chunk.length
+        inflightRef.current = true
+        const controller = new AbortController()
+        abortRef.current = controller
+        const started = { ...state, pending: true, failed: false, code: null }
+        translationRef.current = started
+        setTranslation(started)
+        requestTranslation(chunk, { ...config, signal: controller.signal })
+          .then((translated) => {
+            if (controller.signal.aborted) return
+            const current = translationRef.current
+            const next = {
+              text: current.text + translated,
+              cursor: Math.max(current.cursor, nextCursor),
+              pending: false,
+              failed: false,
+              code: null,
+            }
+            translationRef.current = next
+            setTranslation(next)
+            // Release the in-flight gate before chaining the next stable
+            // fragment; `.finally` alone would run after this callback.
+            inflightRef.current = false
+            abortRef.current = null
+            pump()
+          })
+          .catch((error) => {
+            if (controller.signal.aborted) return
+            const next = {
+              ...translationRef.current,
+              pending: false,
+              failed: true,
+              code: error instanceof Error ? error.message : String(error),
+            }
+            translationRef.current = next
+            setTranslation(next)
+          })
+          .finally(() => {
+            if (abortRef.current === controller) abortRef.current = null
+            inflightRef.current = false
+          })
+      }, [])
+
+      /** Debounced pump: streaming appends schedule work; a reset restarts it. */
+      React.useEffect(() => {
+        if (!settings.enabled || !settings.translation) return undefined
+        const previous = prevSourceRef.current
+        prevSourceRef.current = source
+        if (previous !== '' && !source.startsWith(previous)) {
+          // The reasoning text was replaced or shrank: drop translated segments
+          // instead of stitching a translation of a different source.
+          abortRef.current?.abort()
+          abortRef.current = null
+          inflightRef.current = false
+          const reset = { text: '', cursor: 0, pending: false, failed: false, code: null }
+          translationRef.current = reset
+          setTranslation(reset)
+        }
+        // Keep one pending debounce across token appends: resetting the timer
+        // on every delta would starve translation during a continuous stream.
+        if (timerRef.current !== 0) return undefined
+        timerRef.current = window.setTimeout(() => {
+          timerRef.current = 0
+          pump()
+        }, 220)
+        return undefined
+      }, [source, settings.enabled, settings.translation, settings.translationProvider,
+        settings.translationTargetLanguage, capability.available, capability.maxTextChars, version, pump])
+
+      /** Language, provider, or enable changes restart from the current source. */
+      React.useEffect(() => {
+        abortRef.current?.abort()
+        abortRef.current = null
+        inflightRef.current = false
+        window.clearTimeout(timerRef.current)
+        timerRef.current = 0
+        const reset = { text: '', cursor: 0, pending: false, failed: false, code: null }
+        translationRef.current = reset
+        setTranslation(reset)
+        setVersion((value) => value + 1)
+      }, [settings.translationProvider, settings.translationTargetLanguage])
+
+      /** Unmount (collapse, session switch, plugin unload) cancels the request. */
+      React.useEffect(() => () => {
+        abortRef.current?.abort()
+        abortRef.current = null
+        window.clearTimeout(timerRef.current)
+      }, [])
+
+      const available = capability.available
+      const failed = translation.failed
+      const pending = translation.pending
+      const displayed = !available || failed || showOriginal
+        ? source
+        : translation.text + source.slice(translation.cursor)
+      const labels = React.useMemo(() => ({
+        code: {
+          copyLabel: t('copy'),
+          copiedLabel: t('copied'),
+          toolbarLabels: {
+            codeLabel: t('codeTitle'),
+            wrapLabel: t('wrap'),
+            unwrapLabel: t('unwrap'),
+          },
+        },
+        footnotes: t('footnotes'),
+      }), [t])
+
+      const retry = () => {
+        const reset = { ...translationRef.current, failed: false, code: null }
+        translationRef.current = reset
+        setTranslation(reset)
+        setVersion((value) => value + 1)
+      }
+
+      return h('div', {
+        className: 'dshTR_root',
+        'data-dsh-reasoning-translation': '',
+        'data-view': showOriginal ? 'original' : 'translated',
+        'data-state': !available ? 'unavailable' : failed ? 'failed' : pending ? 'pending' : 'ready',
+      },
+        h('div', { className: 'dshTR_bar' },
+          available
+            ? h('button', {
+              type: 'button',
+              className: 'dshTR_toggle',
+              disabled: failed,
+              'aria-pressed': showOriginal ? 'true' : 'false',
+              onClick: () => setShowOriginal((value) => !value),
+            }, t(showOriginal || failed ? 'translate.viewTranslation' : 'translate.viewOriginal'))
+            : h('span', { className: 'dshTR_note' }, t('translate.unavailable')),
+          pending ? h('span', { className: 'dshTR_note' }, t('translate.translating')) : null,
+          failed ? h('span', { className: 'dshTR_note' }, t('translate.failed')) : null,
+          failed ? h('button', {
+            type: 'button',
+            className: 'dshTR_toggle',
+            onClick: retry,
+          }, t('translate.retry')) : null),
+        props.renderFactorySlot('conversation.chat.reasoning.content', {
+          text: displayed,
+          running,
+          labels,
+        }))
     }
 
     /**
@@ -1496,12 +2588,53 @@ window.__ModuleLoader__.load({
         }
       }, 'stream-polish: surfaces')
 
-      ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-        name: 'conversation.input.dock',
-        id: 'run-strip',
-        order: 0,
-        locale: NS,
-      }, RunStrip))
+      ctx.slots.inject('conversation.input.dock', () => [
+        ctx.slots.register({
+          name: 'conversation.input.dock',
+          id: 'run-strip',
+          order: 0,
+          locale: NS,
+        }, RunStrip),
+        ctx.slots.register({
+          name: 'conversation.input.dock',
+          id: 'step-panel',
+          order: 1,
+          locale: NS,
+        }, StepPanel),
+      ])
+
+      // The single reasoning Body cell is intentionally shadowed only while
+      // translation is enabled: priority -1 beats Chat's built-in body (0) and
+      // the optional cot-translation bundle's wrapper. Turning the switch off
+      // withdraws this entry, so the built-in body renders again unchanged.
+      ctx.slots.inject('conversation.chat.reasoning.body', () => {
+        let active = null
+        const sync = () => {
+          // Without the Host-published translator capability, keep Chat's own
+          // body: a wrapper that can only show the original is pure noise.
+          const wanted = store.get().enabled && store.get().translation
+            && readCapabilities().translation.available
+          if (wanted && active === null) {
+            active = ctx.slots.register({
+              name: 'conversation.chat.reasoning.body',
+              priority: -1,
+              locale: NS,
+            }, TranslationBody)
+          } else if (!wanted && active !== null) {
+            active()
+            active = null
+          }
+        }
+        sync()
+        const unsubscribe = store.subscribe(sync)
+        return () => {
+          unsubscribe()
+          if (active !== null) {
+            active()
+            active = null
+          }
+        }
+      })
 
       // The bundle's own page inside Settings -> Plugins: this is where the
       // Plugins page renders a package's configuration, keyed by its package

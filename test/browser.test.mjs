@@ -172,7 +172,7 @@ class Devtools {
 function harness(clientCode, config, body) {
   const wire = config === undefined
     ? ''
-    : '<script>window.__DSH_STREAM_POLISH__ = ' + JSON.stringify({ version: 2, config }) + '</script>'
+    : '<script>window.__DSH_STREAM_POLISH__ = ' + JSON.stringify({ version: 3, config }) + '</script>'
   return `<!doctype html><html><head><meta charset="utf-8"></head><body>
 <script>window.__ModuleLoader__ = { load(def) { window.__def = def } }</script>
 ${wire}
@@ -259,7 +259,7 @@ test('the browser resolves the default configuration', { skip }, async (t) => {
   assert.equal(result.error, undefined)
   assert.equal(result.mounted.styles, 1)
   assert.equal(result.mounted.observers, 2)
-  assert.equal(result.mounted.slots, 2, 'run capsule + bundle config page')
+  assert.equal(result.mounted.slots, 3, 'run capsule + step panel + bundle config page')
   assert.equal(result.streaming.blockAnimation, 'dshSP_blockIn')
   assert.equal(result.streaming.blockDuration, '0.16s')
   assert.equal(result.streaming.caretWidth, '2px')
@@ -338,7 +338,7 @@ test('enabled: false mounts nothing', { skip }, async (t) => {
   const result = await devtools.evaluate('window.__done__')
 
   assert.equal(result.error, undefined)
-  assert.deepEqual(result.mounted, { styles: 0, slots: 2, observers: 0 })
+  assert.deepEqual(result.mounted, { styles: 0, slots: 3, observers: 0 })
   assert.equal(result.settling, false)
 })
 
