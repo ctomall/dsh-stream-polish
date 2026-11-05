@@ -612,3 +612,35 @@ test('toolCardPolish contributes paint-only tool row styles', async () => {
   applyClient(off.module)
   assert.ok(!cssOf(off).includes(':where([data-chat-flow] [data-tool])'))
 })
+
+
+test('the bundle settings page renders without throwing', async () => {
+  const load = await loadClient({
+    wire: {
+      version: 3,
+      config: { stepPanel: true, translation: true },
+      capabilities: { translation: { available: true, maxTextChars: 4000 } },
+    },
+  })
+  const mounted = applyClient(load.module)
+  const page = mounted.registrations.find((entry) => entry.options.key === '@local/stream-polish')
+  assert.equal(typeof page.component, 'function')
+  let tree
+  assert.doesNotThrow(() => {
+    tree = page.component({ view: 'page', t: (key) => key })
+  })
+  assert.ok(tree && typeof tree === 'object')
+  assert.equal(typeof tree.type, 'function', 'the page component is returned for view:page')
+  let rendered
+  assert.doesNotThrow(() => {
+    rendered = tree.type(tree.props)
+  })
+  assert.equal(rendered.props.className, 'dshSPS_page')
+  const preview = rendered.children.find((child) => typeof child?.type === 'function' && child.type.name === 'PreviewPanel')
+  assert.ok(preview, 'the page mounts the preview panel')
+  let previewTree
+  assert.doesNotThrow(() => {
+    previewTree = preview.type(preview.props)
+  })
+  assert.equal(previewTree.props.className, 'dshSPS_preview')
+})

@@ -438,7 +438,7 @@ test('the preview stylesheet follows the configured durations', { skip }, async 
   assert.equal(result.dot.name, 'dshSPS_pulse')
 })
 
-test('the settings layout is a three-column grid that collapses on narrow screens', { skip }, async (t) => {
+test('the settings layout is a responsive card grid that collapses on narrow screens', { skip }, async (t) => {
   const client = await readFile(CLIENT, 'utf8')
   const dir = await mkdtemp(join(tmpdir(), 'stream-polish-'))
   const file = join(dir, 'layout.html')
@@ -478,8 +478,8 @@ test('the settings layout is a three-column grid that collapses on narrow screen
   await devtools.open('file://' + file)
   const wide = await devtools.evaluate('window.__done__')
 
-  assert.equal(wide.columns, 3, 'three cards across at a desktop width')
-  assert.equal(wide.pageWidth, '720px', 'the page is capped at 720px, not a narrow column')
+  assert.equal(wide.columns, 4, 'four cards across at the widened desktop page')
+  assert.equal(wide.pageWidth, '860px', 'the page is capped at 860px, not a narrow column')
   assert.equal(wide.gap, '10px')
   assert.equal(wide.cardRadius, '10px')
   assert.equal(wide.masterDisplay, 'flex')

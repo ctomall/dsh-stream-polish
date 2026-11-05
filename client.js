@@ -400,6 +400,22 @@ window.__ModuleLoader__.load({
     /** Bound translator, set in `apply`; used when a slot omits `t`. */
     let translate = (key) => key
 
+    /** Active UI locale id, kept current by `apply` for `auto` target languages. */
+    let uiLocale = 'en'
+
+    /**
+     * Resolve the configured target language at request time.
+     *
+     * `auto` follows the interface language, matching the official
+     * translator consumer; a concrete tag passes through unchanged.
+     * @param {unknown} value - configured `translationTargetLanguage`.
+     * @returns {string} a provider-ready language tag.
+     */
+    function resolveTargetLanguage(value) {
+      if (value !== 'auto') return typeof value === 'string' && value !== '' ? value : 'zh-CN'
+      return uiLocale === 'zh' ? 'zh-CN' : (uiLocale === '' ? 'en' : uiLocale)
+    }
+
     /** Write one diagnostic line, unless `logLevel` is quieter than `level`. */
     function logAt(level, method, text) {
       const rank = LEVEL_RANK[store.get().logLevel] ?? LEVEL_RANK.warn
@@ -542,6 +558,30 @@ window.__ModuleLoader__.load({
       'settings.reset': '恢复默认',
       'settings.resetHint': '清除本浏览器的覆盖值',
       'settings.footHint': '改动立即生效；要成为所有浏览器的默认值，请改档案里的 cordis.patch.yml。',
+      'settings.presets': '快速预设',
+      'settings.preset.calm': '克制',
+      'settings.preset.standard': '标准',
+      'settings.preset.full': '全开',
+      'settings.presetHint': '只改外观与面板，不会自动开启翻译',
+      'settings.resetGroup': '恢复本组',
+      'settings.resetGroupHint': '把本组恢复为档案默认值',
+      'settings.translationTest': '测试翻译',
+      'settings.translationTesting': '翻译中…',
+      'settings.translationTestHint': '用一句英文样例验证当前服务与目标语言',
+      'settings.translationTestOk': '译文：{text}',
+      'settings.translationTestFail': '测试失败：{code}',
+      'preview.live': '实时预览',
+      'preview.play': '播放',
+      'preview.pause': '暂停',
+      'preview.noPanel': '步骤面板已关闭',
+      'preview.noTool': '工具卡美化已关闭',
+      'preview.replaced': '工具行已由步骤面板替换',
+      'preview.thinkingSample': '检查配置与渲染路径',
+      'preview.replySample': '已更新插件详情页',
+      'preview.translationSample': '思考内容的中文译文',
+      'preview.translationToolbar': '查看原文',
+      'preview.stepHeader': '本轮步骤',
+      'preview.earlier': '更早 {n} 条',
       'settings.range': '{min}–{max} 毫秒',
       'settings.loading': '读取版本…',
       'settings.version': '版本 {version}',
@@ -678,6 +718,30 @@ window.__ModuleLoader__.load({
       'settings.reset': 'Reset',
       'settings.resetHint': 'Clear this browser\u2019s overrides',
       'settings.footHint': 'Changes apply immediately; edit the profile cordis.patch.yml to change the defaults for every browser.',
+      'settings.presets': 'Presets',
+      'settings.preset.calm': 'Calm',
+      'settings.preset.standard': 'Standard',
+      'settings.preset.full': 'Full',
+      'settings.presetHint': 'Visuals and panel only; never turns translation on',
+      'settings.resetGroup': 'Reset group',
+      'settings.resetGroupHint': 'Restore this group to the profile defaults',
+      'settings.translationTest': 'Test translation',
+      'settings.translationTesting': 'Translating…',
+      'settings.translationTestHint': 'Checks the selected service and target language with one English sentence',
+      'settings.translationTestOk': 'Translation: {text}',
+      'settings.translationTestFail': 'Test failed: {code}',
+      'preview.live': 'Live preview',
+      'preview.play': 'Play',
+      'preview.pause': 'Pause',
+      'preview.noPanel': 'Step panel is off',
+      'preview.noTool': 'Tool card polish is off',
+      'preview.replaced': 'Tool rows are replaced by the step panel',
+      'preview.thinkingSample': 'Checking the configuration and render path',
+      'preview.replySample': 'Updated the plugin detail page',
+      'preview.translationSample': 'Chinese translation of the reasoning',
+      'preview.translationToolbar': 'View original',
+      'preview.stepHeader': 'This turn',
+      'preview.earlier': '{n} earlier',
       'settings.range': '{min}–{max} ms',
       'settings.loading': 'Reading version…',
       'settings.version': 'Version {version}',
@@ -1099,14 +1163,26 @@ window.__ModuleLoader__.load({
 
     /** Settings-page styles; mounted whether or not the decoration is enabled. */
     const PAGE_CSS = [
-      '.dshSPS_page{display:flex;flex-direction:column;gap:18px;max-width:720px;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_page{display:flex;flex-direction:column;gap:18px;max-width:860px;color:var(--dsw-alias-label-primary)}',
       '.dshSPS_head{display:flex;flex-direction:column;gap:4px}',
       '.dshSPS_title{margin:0;font-size:15px;font-weight:600;line-height:22px}',
       '.dshSPS_intro{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
       '.dshSPS_meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
       '.dshSPS_badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:11px;line-height:20px;color:var(--dsw-alias-state-warn-primary);border:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,transparent)}',
-      '.dshSPS_section{display:flex;flex-direction:column;gap:10px}',
-      '.dshSPS_sectionHead{display:flex;align-items:baseline;gap:10px;min-width:0}',
+      '.dshSPS_headTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}',
+      '.dshSPS_headText{display:flex;flex-direction:column;gap:4px;min-width:0}',
+      '.dshSPS_presets{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:2px}',
+      '.dshSPS_presetsLabel{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_presetBtn{height:24px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:11px;line-height:22px;cursor:pointer}',
+      '.dshSPS_presetBtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_presetBtn[data-active=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,transparent)}',
+      '.dshSPS_presetBtn:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}',
+      '.dshSPS_presetsHint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_board{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;align-items:start}',
+
+      '.dshSPS_section{display:flex;flex-direction:column;gap:10px;min-width:0}',
+      '.dshSPS_sectionHead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}',
+      '.dshSPS_sectionHeading{display:flex;align-items:baseline;gap:10px;min-width:0;overflow:hidden}',
       '.dshSPS_sectionTitle{margin:0;font-size:12px;font-weight:600;line-height:18px;color:var(--dsw-alias-label-secondary)}',
       '.dshSPS_sectionNote{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
 
@@ -1158,6 +1234,9 @@ window.__ModuleLoader__.load({
       '.dshSPS_button:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}',
       '.dshSPS_button[data-primary=true]{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}',
       '.dshSPS_footHint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
+      '.dshSPS_linkBtn{flex:none;height:22px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font-family:inherit;font-size:11px;line-height:22px;cursor:pointer}',
+      '.dshSPS_linkBtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_linkBtn:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}',
 
       '.dshSPS_card{display:flex;flex-direction:column;gap:10px;padding:12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2)}',
       '.dshSPS_cardHead{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}',
@@ -1191,10 +1270,42 @@ window.__ModuleLoader__.load({
       '.dshSPS_demoPillDot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dsw-alias-state-business-primary);animation:dshSPS_pulse 1.8s ease-in-out infinite}',
       '.dshSPS_demoPillPhase{color:var(--dsw-alias-label-secondary);font-weight:500}',
       '.dshSPS_demoPillSep{color:var(--dsw-alias-separator-primary)}',
+      '.dshSPS_demoLines{display:flex;flex-direction:column;gap:6px}',
+      '.dshSPS_demoPanel{--dshSPS-accent:var(--dsw-alias-brand-primary);border:.5px solid var(--dsw-alias-border-l1);border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 82%,transparent);overflow:hidden;font-size:11px;line-height:16px}',
+      '.dshSPS_demoPanelHead{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent);color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_demoPanelTitle{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dshSPS_demoPanelLive{display:inline-flex;align-items:center;gap:5px;justify-self:center;color:var(--dsw-alias-label-secondary);white-space:nowrap}',
+      '.dshSPS_demoPanelDot{width:5px;height:5px;border-radius:50%;background:var(--dsw-alias-state-business-primary);animation:dshSPS_pulse 1.8s ease-in-out infinite}',
+      '.dshSPS_demoPanelMore{justify-self:end;color:var(--dsw-alias-label-tertiary);white-space:nowrap}',
+      '.dshSPS_demoRow{display:flex;align-items:center;gap:7px;padding:3px 8px;min-width:0}',
+      '.dshSPS_demoRowDot{width:5px;height:5px;border-radius:50%;flex:none;background:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_demoRowAction{flex:none;max-width:36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_demoRowObject{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,monospace}',
+      '.dshSPS_demoRowState,.dshSPS_demoRowTime{flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;font-variant-numeric:tabular-nums}',
+      '.dshSPS_demoPanel[data-motion=true] .dshSPS_demoRow{animation:dshSPS_rowIn 160ms cubic-bezier(.2,.7,.3,1)}',
+      '.dshSPS_demoPanel[data-motion=true] .dshSPS_demoRow:nth-child(2){animation-delay:40ms}',
+      '.dshSPS_demoPanel[data-motion=true] .dshSPS_demoRow:nth-child(3){animation-delay:80ms}',
+      '.dshSPS_demoPanel[data-phase=true] .dshSPS_demoRow[data-state=running] .dshSPS_demoRowDot{background:var(--dshSPS-accent)}',
+      '.dshSPS_demoPanel[data-phase=true] .dshSPS_demoRow[data-state=running] .dshSPS_demoRowState{color:var(--dshSPS-accent)}',
+      '.dshSPS_demoPanel[data-phase=true] .dshSPS_demoRow[data-kind=reply] .dshSPS_demoRowDot{background:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_demoTool{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 62%,transparent);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent)}',
+      '.dshSPS_demoToolMark{color:var(--dsw-alias-label-caption)}',
+      '.dshSPS_demoToolTitle{font-weight:500;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_demoToolSummary{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,monospace}',
+      '.dshSPS_demoToolState{flex:none;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_demoTranslate{display:flex;align-items:center;gap:8px;padding:2px 2px 0;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_demoTranslateBtn{flex:none;text-decoration:underline dotted;text-underline-offset:2px}',
+      '.dshSPS_demoTranslateText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_test{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_testText{display:flex;flex-direction:column;gap:2px;min-width:0}',
+      '.dshSPS_testTitle{font-size:13px;line-height:18px;color:var(--dsw-alias-label-primary)}',
+      '.dshSPS_testHint{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_testControl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex:1;min-width:0}',
+      '@keyframes dshSPS_rowIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}',
       '@keyframes dshSPS_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}',
       '@keyframes dshSPS_breath{0%,100%{opacity:.95}50%{opacity:.78}}',
       '@keyframes dshSPS_pulse{0%,100%{opacity:1}50%{opacity:.45}}',
-      '@media (prefers-reduced-motion:reduce){.dshSPS_demoLine.dshSPS_demoIn,.dshSPS_demoCaret,.dshSPS_demoPillDot{animation:none}}',
+      '@media (prefers-reduced-motion:reduce){.dshSPS_demoLine.dshSPS_demoIn,.dshSPS_demoCaret,.dshSPS_demoPillDot,.dshSPS_demoPanel[data-motion=true] .dshSPS_demoRow{animation:none}}',
       '@media (max-width:560px){.dshSPS_master{flex-wrap:wrap;gap:10px}.dshSPS_grid{grid-template-columns:1fr}.dshSPS_previewHint{display:none}}',
       '@media (prefers-reduced-motion:reduce){.dshSPS_switch,.dshSPS_knob{transition:none}}',
     ].join('')
@@ -1207,8 +1318,17 @@ window.__ModuleLoader__.load({
     function SettingsSection(props) {
       return h('section', { className: 'dshSPS_section' },
         h('div', { className: 'dshSPS_sectionHead' },
-          h('h4', { className: 'dshSPS_sectionTitle' }, props.title),
-          props.note === undefined ? null : h('span', { className: 'dshSPS_sectionNote' }, props.note)),
+          h('div', { className: 'dshSPS_sectionHeading' },
+            h('h4', { className: 'dshSPS_sectionTitle' }, props.title),
+            props.note === undefined ? null : h('span', { className: 'dshSPS_sectionNote' }, props.note)),
+          props.onReset === undefined
+            ? null
+            : h('button', {
+              type: 'button',
+              className: 'dshSPS_linkBtn',
+              title: props.resetHint ?? '',
+              onClick: props.onReset,
+            }, props.resetLabel ?? 'Reset')),
         props.children)
     }
 
@@ -1411,15 +1531,16 @@ window.__ModuleLoader__.load({
      * @param {string} [method] - HTTP method.
      * @returns {Promise<object>} the parsed body, or an error envelope.
      */
-    async function apiCall(path, method = 'GET') {
+    async function apiCall(path, method = 'GET', body) {
       if (typeof fetch !== 'function') {
         return { ok: false, error: 'no-fetch', message: 'fetch is unavailable in this browser' }
       }
       try {
+        const payload = method === 'POST' ? JSON.stringify(body ?? {}) : undefined
         const response = await fetch('./api/stream-polish' + path, {
           method,
           headers: method === 'POST' ? { 'content-type': 'application/json' } : undefined,
-          body: method === 'POST' ? '{}' : undefined,
+          body: payload,
           credentials: 'same-origin',
         })
         if (response.status === 404) {
@@ -1545,14 +1666,102 @@ window.__ModuleLoader__.load({
      * segments survive. Replaying bumps a key so React remounts the snippet and
      * the entry animation runs again.
      */
+    /** Preset name list shared by the hero shortcuts and the tests. */
+    const PRESET_NAMES = ['calm', 'standard', 'full']
+
+    /**
+     * Build one visual preset patch.
+     *
+     * Presets never turn machine translation on: it sends content to an
+     * external endpoint, so enabling it stays an explicit privacy decision.
+     * @param {string} name - `calm` | `standard` | `full`.
+     * @returns {Record<string, unknown>} every option, plus the preset deltas.
+     */
+    function presetPatch(name) {
+      const base = { ...DEFAULTS }
+      if (name === 'calm') {
+        return {
+          ...base,
+          blockFadeMs: 120,
+          caretPeriodMs: 1600,
+          settleMs: 220,
+          runStrip: false,
+          stepPanel: false,
+          replaceToolRows: false,
+          toolCardPolish: true,
+          translation: false,
+        }
+      }
+      if (name === 'full') {
+        return {
+          ...base,
+          runStrip: true,
+          stepPanel: true,
+          stepPanelRows: 8,
+          replaceToolRows: false,
+          toolCardPolish: true,
+          stepPanelMotion: true,
+          stepPanelPhaseColors: true,
+          translation: false,
+        }
+      }
+      return base
+    }
+
+    /**
+     * Whether the accepted settings equal one preset's patch.
+     * @param {Record<string, unknown>} settings - resolved settings.
+     * @param {string} name - preset name.
+     * @returns {boolean} true when every preset key matches.
+     */
+    function presetActive(settings, name) {
+      const patch = presetPatch(name)
+      return Object.entries(patch).every(([key, value]) => settings[key] === value)
+    }
+
+    /**
+     * A continuously replaying miniature of every visual surface.
+     *
+     * The stage remounts on a signature change, so moving any control restarts
+     * the entry animations immediately; while `playing` it also remounts every
+     * 4.2 seconds so the animation never sits still. That is the "always
+     * animating" default the page promises.
+     */
     function PreviewPanel(props) {
       const settings = props.settings
       const t = props.t
       const [cycle, setCycle] = React.useState(0)
+      const [playing, setPlaying] = React.useState(true)
+
+      const signature = [
+        settings.enabled, settings.blockFade, settings.blockFadeMs,
+        settings.caret, settings.caretPeriodMs, settings.settleFade, settings.settleMs,
+        settings.runStrip, settings.showElapsed, settings.showActivity,
+        settings.stepPanel, settings.stepPanelRows, settings.stepPanelAccent,
+        settings.stepPanelMotion, settings.stepPanelPhaseColors, settings.replaceToolRows,
+        settings.toolCardPolish, settings.translation, settings.translationProvider,
+        settings.translationTargetLanguage,
+      ].join('|')
+
+      // A control change remounts the stage, so its animation restarts at once.
+      React.useEffect(() => {
+        setCycle((value) => value + 1)
+      }, [signature])
+
+      // Default state: keep the miniature moving. Pausing only stops this
+      // loop; the controls still replay it on the next change.
+      React.useEffect(() => {
+        if (!playing || !settings.enabled) return undefined
+        const timer = window.setInterval(() => setCycle((value) => value + 1), 4200)
+        return () => window.clearInterval(timer)
+      }, [playing, settings.enabled])
+
       const stageStyle = {
         '--dshSPS-fade': settings.blockFadeMs + 'ms',
         '--dshSPS-period': settings.caretPeriodMs + 'ms',
+        '--dshSPS-accent': settings.stepPanelAccent,
       }
+
       const capsule = settings.runStrip
         ? h('div', { className: 'dshSPS_demoPill' },
           h('span', { className: 'dshSPS_demoPillDot' }),
@@ -1565,12 +1774,79 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'dshSPS_demoPillSep', key: 'sep2' }, '·')
             : null,
           settings.showActivity ? h('span', { key: 'activity' }, t('preview.activity')) : null)
-        : h('div', { className: 'dshSPS_previewNote' }, t('preview.noCapsule'))
+        : null
+
+      let panel = null
+      if (settings.enabled && settings.stepPanel) {
+        const demoRows = [
+          { key: 'think', kind: 'thinking', state: 'done', action: t('step.thinking'), object: t('preview.thinkingSample'), time: '1.2s' },
+          { key: 'tool', kind: 'tool', state: 'running', action: t('step.tool.bash'), object: 'npm test', time: '00:12' },
+          { key: 'reply', kind: 'reply', state: 'done', action: t('step.reply'), object: t('preview.replySample'), time: '3.4s' },
+        ]
+        const visible = Math.max(1, Math.min(settings.stepPanelRows, demoRows.length))
+        const hidden = demoRows.length - visible
+        panel = h('div', {
+          className: 'dshSPS_demoPanel',
+          'data-motion': settings.stepPanelMotion ? 'true' : 'false',
+          'data-phase': settings.stepPanelPhaseColors ? 'true' : 'false',
+        },
+          h('div', { className: 'dshSPS_demoPanelHead' },
+            h('span', { className: 'dshSPS_demoPanelTitle' }, t('preview.stepHeader')),
+            settings.runStrip
+              ? h('span', { className: 'dshSPS_demoPanelLive' },
+                h('span', { className: 'dshSPS_demoPanelDot' }),
+                t('preview.phase'),
+                settings.showElapsed ? ' · ' + t('preview.elapsed') : null)
+              : null,
+            hidden > 0
+              ? h('span', { className: 'dshSPS_demoPanelMore' }, t('preview.earlier', { n: hidden }))
+              : null),
+          demoRows.slice(0, visible).map((row) => h('div', {
+            key: row.key,
+            className: 'dshSPS_demoRow',
+            'data-kind': row.kind,
+            'data-state': row.state,
+          },
+            h('span', { className: 'dshSPS_demoRowDot', 'aria-hidden': true }),
+            h('span', { className: 'dshSPS_demoRowAction' }, row.action),
+            h('span', { className: 'dshSPS_demoRowObject' }, row.object),
+            h('span', { className: 'dshSPS_demoRowState' }, t('step.status.' + row.state)),
+            h('span', { className: 'dshSPS_demoRowTime' }, row.time))))
+      } else if (settings.enabled) {
+        panel = h('div', { className: 'dshSPS_previewNote' }, t('preview.noPanel'))
+      }
+
+      let toolCard = null
+      if (settings.enabled) {
+        if (settings.replaceToolRows && settings.stepPanel) {
+          toolCard = h('div', { className: 'dshSPS_previewNote' }, t('preview.replaced'))
+        } else if (settings.toolCardPolish) {
+          toolCard = h('div', { className: 'dshSPS_demoTool' },
+            h('span', { className: 'dshSPS_demoToolMark', 'aria-hidden': true }, '›'),
+            h('span', { className: 'dshSPS_demoToolTitle' }, 'Bash'),
+            h('span', { className: 'dshSPS_demoToolSummary' }, 'npm test'),
+            h('span', { className: 'dshSPS_demoToolState', 'data-state': 'done' }, t('step.status.done')))
+        } else {
+          toolCard = h('div', { className: 'dshSPS_previewNote' }, t('preview.noTool'))
+        }
+      }
+
+      const translation = settings.enabled && settings.translation
+        ? h('div', { className: 'dshSPS_demoTranslate' },
+          h('span', { className: 'dshSPS_demoTranslateBtn' }, t('preview.translationToolbar')),
+          h('span', { className: 'dshSPS_demoTranslateText' }, t('preview.translationSample')))
+        : null
 
       return h('div', { className: 'dshSPS_preview' },
         h('div', { className: 'dshSPS_previewBar' },
-          h('span', { className: 'dshSPS_previewTag' }, t('preview.title')),
+          h('span', { className: 'dshSPS_previewTag' }, t('preview.live')),
           h('span', { className: 'dshSPS_previewHint' }, t('preview.hint')),
+          h('button', {
+            type: 'button',
+            className: 'dshSPS_button',
+            disabled: !settings.enabled,
+            onClick: () => setPlaying((value) => !value),
+          }, playing ? t('preview.pause') : t('preview.play')),
           h('button', {
             type: 'button',
             className: 'dshSPS_button',
@@ -1578,17 +1854,60 @@ window.__ModuleLoader__.load({
             onClick: () => setCycle((value) => value + 1),
           }, t('preview.replay'))),
         settings.enabled
-          ? h('div', { className: 'dshSPS_previewStage', key: cycle, style: stageStyle },
-            h('p', { className: 'dshSPS_demoLine' }, t('preview.settled')),
-            h('p', {
-              className: 'dshSPS_demoLine dshSPS_demoIn',
-              'data-fade': settings.blockFade ? 'true' : 'false',
-            }, t('preview.fading', { ms: settings.blockFadeMs })),
-            h('p', { className: 'dshSPS_demoLine' },
-              t('preview.caret'),
-              settings.caret ? h('span', { className: 'dshSPS_demoCaret', 'aria-hidden': true }) : null),
-            capsule)
+          ? h('div', { className: 'dshSPS_previewStage', key: cycle, style: stageStyle, 'data-playing': playing ? 'true' : 'false' },
+            h('div', { className: 'dshSPS_demoLines' },
+              h('p', { className: 'dshSPS_demoLine' }, t('preview.settled')),
+              h('p', {
+                className: 'dshSPS_demoLine dshSPS_demoIn',
+                'data-fade': settings.blockFade ? 'true' : 'false',
+              }, t('preview.fading', { ms: settings.blockFadeMs })),
+              h('p', { className: 'dshSPS_demoLine' },
+                t('preview.caret'),
+                settings.caret ? h('span', { className: 'dshSPS_demoCaret', 'aria-hidden': true }) : null)),
+            !settings.stepPanel && capsule ? capsule : null,
+            panel,
+            toolCard,
+            translation)
           : h('div', { className: 'dshSPS_previewEmpty' }, t('preview.off')))
+    }
+
+    /** One route probe: translate a fixed English sentence with the current choices. */
+    function TranslationTest(props) {
+      const { settings, t } = props
+      const [state, setState] = React.useState({ busy: false, text: null, code: null })
+      const available = readWireVersion() === WIRE_VERSION && readCapabilities().translation.available
+      const run = async () => {
+        setState({ busy: true, text: null, code: null })
+        const result = await apiCall('/translate', 'POST', {
+          text: 'The quick brown fox jumps over the lazy dog.',
+          provider: settings.translationProvider,
+          targetLanguage: resolveTargetLanguage(settings.translationTargetLanguage),
+        })
+        if (result?.ok === true) {
+          setState({ busy: false, text: String(result.text ?? ''), code: null })
+        } else {
+          setState({ busy: false, text: null, code: String(result?.code ?? result?.error ?? 'FAILED') })
+        }
+      }
+      return h('div', { className: 'dshSPS_test' },
+        h('div', { className: 'dshSPS_testText' },
+          h('span', { className: 'dshSPS_testTitle' }, t('settings.translationTest')),
+          h('span', { className: 'dshSPS_testHint' }, t('settings.translationTestHint'))),
+        h('div', { className: 'dshSPS_testControl' },
+          h('button', {
+            type: 'button',
+            className: 'dshSPS_button',
+            disabled: state.busy || !available,
+            onClick: () => { void run() },
+          }, state.busy ? t('settings.translationTesting') : t('settings.translationTest')),
+          state.text === null
+            ? null
+            : h('span', { className: 'dshSPS_status', 'data-tone': 'ok' },
+              t('settings.translationTestOk', { text: state.text })),
+          state.code === null
+            ? null
+            : h('span', { className: 'dshSPS_status', 'data-tone': 'error' },
+              t('settings.translationTestFail', { code: state.code }))))
     }
 
     /** The Stream polish page inside Settings -> Plugins. */
@@ -1596,17 +1915,6 @@ window.__ModuleLoader__.load({
       const settings = useSettings()
       const t = typeof props.t === 'function' ? props.t : translate
       const update = (patch) => store.update(patch)
-      const toggle = (key) => h(SettingsSwitch, {
-        checked: settings[key],
-        label: t('settings.' + key),
-        onChange: (next) => update({ [key]: next }),
-      })
-      const number = (key) => h(SettingsNumber, {
-        option: key,
-        value: settings[key],
-        t,
-        onChange: (next) => update({ [key]: next }),
-      })
 
       try {
         return renderPage()
@@ -1621,6 +1929,21 @@ window.__ModuleLoader__.load({
       function renderPage() {
         const caretOff = !settings.caret
         const stripOff = !settings.runStrip
+        const panelOff = !settings.stepPanel
+        const translationOff = !settings.translation
+        const resetGroup = (keys) => {
+          const base = store.baseline()
+          const patch = {}
+          for (const key of keys) patch[key] = base[key]
+          update(patch)
+        }
+        const groups = {
+          display: ['enabled', 'blockFade', 'caret', 'settleFade', 'runStrip', 'showElapsed', 'showActivity', 'toolCardPolish'],
+          timing: ['blockFadeMs', 'caretPeriodMs', 'settleMs', 'stallMs'],
+          steps: ['stepPanel', 'stepPanelRows', 'stepPanelAccent', 'stepPanelMotion', 'stepPanelPhaseColors', 'replaceToolRows'],
+          translation: ['translation', 'translationProvider', 'translationTargetLanguage', 'translationTimeoutMs'],
+          log: ['logLevel'],
+        }
         const toggle = (key, disabled) => h(SettingsToggleCard, {
           key,
           title: t('settings.' + key),
@@ -1640,139 +1963,177 @@ window.__ModuleLoader__.load({
           disabled,
           onChange: (next) => update({ [key]: next }),
         })
+        const sectionReset = (group) => ({
+          onReset: () => resetGroup(groups[group]),
+          resetLabel: t('settings.resetGroup'),
+          resetHint: t('settings.resetGroupHint'),
+        })
 
         return h('div', { className: 'dshSPS_page' },
-          h('div', { className: 'dshSPS_head' },
-            h('h3', { className: 'dshSPS_title' }, t('settings.title')),
-            h('p', { className: 'dshSPS_intro' }, t('settings.intro')),
-            h('div', { className: 'dshSPS_meta' },
-              store.isDefault() ? null : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal')))),
+          h('header', { className: 'dshSPS_head' },
+            h('div', { className: 'dshSPS_headTop' },
+              h('div', { className: 'dshSPS_headText' },
+                h('h3', { className: 'dshSPS_title' }, t('settings.title')),
+                h('p', { className: 'dshSPS_intro' }, t('settings.intro'))),
+              h('div', { className: 'dshSPS_meta' },
+                store.isDefault() ? null : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal')))),
+            h('div', { className: 'dshSPS_presets' },
+              h('span', { className: 'dshSPS_presetsLabel' }, t('settings.presets')),
+              PRESET_NAMES.map((name) => h('button', {
+                key: name,
+                type: 'button',
+                className: 'dshSPS_presetBtn',
+                'data-active': presetActive(settings, name) ? 'true' : undefined,
+                onClick: () => update(presetPatch(name)),
+              }, t('settings.preset.' + name))),
+              h('span', { className: 'dshSPS_presetsHint' }, t('settings.presetHint')))),
 
           h(PreviewPanel, { settings, t }),
 
-          h(UpdatePanel, { t }),
-
-          h(SettingsSection, { title: t('settings.display'), note: t('settings.displayNote') },
-            h(SettingsMaster, {
-              title: t('settings.enabled'),
-              hint: t('settings.enabledHint'),
-              label: t('settings.enabled'),
-              checked: settings.enabled,
-              onChange: (next) => update({ enabled: next }),
-            }),
-            h('div', { className: 'dshSPS_grid' },
-              toggle('blockFade', !settings.enabled),
-              toggle('caret', !settings.enabled),
-              toggle('settleFade', !settings.enabled || caretOff),
-              toggle('runStrip', !settings.enabled),
-              toggle('showElapsed', !settings.enabled || stripOff),
-              toggle('showActivity', !settings.enabled || stripOff),
-              toggle('toolCardPolish', !settings.enabled))),
-
-          h(SettingsSection, { title: t('settings.timing'), note: t('settings.timingNote') },
-            h('div', { className: 'dshSPS_grid' },
-              field('blockFadeMs', !settings.enabled || !settings.blockFade),
-              field('caretPeriodMs', !settings.enabled || caretOff),
-              field('settleMs', !settings.enabled || caretOff || !settings.settleFade),
-              field('stallMs', !settings.enabled))),
-
-          h(SettingsSection, { title: t('settings.steps'), note: t('settings.stepsNote') },
-            h(SettingsMaster, {
-              title: t('settings.stepPanel'),
-              hint: t('settings.stepPanelHint'),
-              label: t('settings.stepPanel'),
-              checked: settings.stepPanel,
-              onChange: (next) => update({ stepPanel: next }),
-            }),
-            h('div', { className: 'dshSPS_grid' },
-              h(SettingsNumberCard, {
-                key: 'stepPanelRows',
-                title: t('settings.stepPanelRows'),
-                hint: t('settings.stepPanelRowsHint'),
-                option: 'stepPanelRows',
-                value: settings.stepPanelRows,
-                t,
-                disabled: !settings.enabled || !settings.stepPanel,
-                onChange: (next) => update({ stepPanelRows: next }),
+          h('div', { className: 'dshSPS_board' },
+            h(SettingsSection, {
+              title: t('settings.display'),
+              note: t('settings.displayNote'),
+              ...sectionReset('display'),
+            },
+              h(SettingsMaster, {
+                title: t('settings.enabled'),
+                hint: t('settings.enabledHint'),
+                label: t('settings.enabled'),
+                checked: settings.enabled,
+                onChange: (next) => update({ enabled: next }),
               }),
-              h(SettingsTextCard, {
-                key: 'stepPanelAccent',
-                title: t('settings.stepPanelAccent'),
-                hint: t('settings.stepPanelAccentHint'),
-                option: 'stepPanelAccent',
-                value: settings.stepPanelAccent,
-                swatch: true,
-                t,
-                disabled: !settings.enabled || !settings.stepPanel,
-                onChange: (next) => update({ stepPanelAccent: next }),
-              }),
-              toggle('stepPanelMotion', !settings.enabled || !settings.stepPanel),
-              toggle('stepPanelPhaseColors', !settings.enabled || !settings.stepPanel),
-              toggle('replaceToolRows', !settings.enabled || !settings.stepPanel))),
+              h('div', { className: 'dshSPS_grid' },
+                toggle('blockFade', !settings.enabled),
+                toggle('caret', !settings.enabled),
+                toggle('settleFade', !settings.enabled || caretOff),
+                toggle('runStrip', !settings.enabled),
+                toggle('showElapsed', !settings.enabled || stripOff),
+                toggle('showActivity', !settings.enabled || stripOff),
+                toggle('toolCardPolish', !settings.enabled))),
 
-          h(SettingsSection, { title: t('settings.translation'), note: t('settings.translationNote') },
-            h(SettingsMaster, {
-              title: t('settings.translationEnabled'),
-              hint: t('settings.translationEnabledHint'),
-              label: t('settings.translationEnabled'),
-              checked: settings.translation,
-              onChange: (next) => update({ translation: next }),
-            }),
-            readWireVersion() !== WIRE_VERSION
-              ? h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationStaleHost'))
-              : readCapabilities().translation.available
-                ? null
-                : h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationUnavailable')),
-            h('div', { className: 'dshSPS_line' },
-              h('span', { className: 'dshSPS_lineHint' }, t('settings.translationPrivacy'))),
-            h('div', { className: 'dshSPS_grid' },
-              h('div', { className: 'dshSPS_tile' },
-                h('span', { className: 'dshSPS_tileTitle' }, t('settings.translationProvider')),
+            h(SettingsSection, {
+              title: t('settings.steps'),
+              note: t('settings.stepsNote'),
+              ...sectionReset('steps'),
+            },
+              h(SettingsMaster, {
+                title: t('settings.stepPanel'),
+                hint: t('settings.stepPanelHint'),
+                label: t('settings.stepPanel'),
+                checked: settings.stepPanel,
+                onChange: (next) => update({ stepPanel: next }),
+              }),
+              h('div', { className: 'dshSPS_grid' },
+                h(SettingsNumberCard, {
+                  key: 'stepPanelRows',
+                  title: t('settings.stepPanelRows'),
+                  hint: t('settings.stepPanelRowsHint'),
+                  option: 'stepPanelRows',
+                  value: settings.stepPanelRows,
+                  t,
+                  disabled: !settings.enabled || panelOff,
+                  onChange: (next) => update({ stepPanelRows: next }),
+                }),
+                h(SettingsTextCard, {
+                  key: 'stepPanelAccent',
+                  title: t('settings.stepPanelAccent'),
+                  hint: t('settings.stepPanelAccentHint'),
+                  option: 'stepPanelAccent',
+                  value: settings.stepPanelAccent,
+                  swatch: true,
+                  t,
+                  disabled: !settings.enabled || panelOff,
+                  onChange: (next) => update({ stepPanelAccent: next }),
+                }),
+                toggle('stepPanelMotion', !settings.enabled || panelOff),
+                toggle('stepPanelPhaseColors', !settings.enabled || panelOff),
+                toggle('replaceToolRows', !settings.enabled || panelOff))),
+
+            h(SettingsSection, {
+              title: t('settings.timing'),
+              note: t('settings.timingNote'),
+              ...sectionReset('timing'),
+            },
+              h('div', { className: 'dshSPS_grid' },
+                field('blockFadeMs', !settings.enabled || !settings.blockFade),
+                field('caretPeriodMs', !settings.enabled || caretOff),
+                field('settleMs', !settings.enabled || caretOff || !settings.settleFade),
+                field('stallMs', !settings.enabled))),
+
+            h(SettingsSection, {
+              title: t('settings.translation'),
+              note: t('settings.translationNote'),
+              ...sectionReset('translation'),
+            },
+              h(SettingsMaster, {
+                title: t('settings.translationEnabled'),
+                hint: t('settings.translationEnabledHint'),
+                label: t('settings.translationEnabled'),
+                checked: settings.translation,
+                onChange: (next) => update({ translation: next }),
+              }),
+              readWireVersion() !== WIRE_VERSION
+                ? h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationStaleHost'))
+                : readCapabilities().translation.available
+                  ? null
+                  : h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationUnavailable')),
+              h('div', { className: 'dshSPS_line' },
+                h('span', { className: 'dshSPS_lineHint' }, t('settings.translationPrivacy'))),
+              h('div', { className: 'dshSPS_grid' },
+                h('div', { className: 'dshSPS_tile' },
+                  h('span', { className: 'dshSPS_tileTitle' }, t('settings.translationProvider')),
+                  h(SettingsSegments, {
+                    group: 'translationProvider',
+                    label: t('settings.translationProvider'),
+                    ids: TRANSLATION_PROVIDERS,
+                    value: settings.translationProvider,
+                    t,
+                    labelFor: (id) => id,
+                    onChange: (next) => update({ translationProvider: next }),
+                  }),
+                  h('span', { className: 'dshSPS_tileHint' }, t('settings.translationProviderHint'))),
+                h(SettingsTextCard, {
+                  key: 'translationTargetLanguage',
+                  title: t('settings.translationTargetLanguage'),
+                  hint: t('settings.translationTargetLanguageHint'),
+                  option: 'translationTargetLanguage',
+                  value: settings.translationTargetLanguage,
+                  t,
+                  disabled: translationOff,
+                  onChange: (next) => update({ translationTargetLanguage: next }),
+                }),
+                h(SettingsNumberCard, {
+                  key: 'translationTimeoutMs',
+                  title: t('settings.translationTimeoutMs'),
+                  hint: t('settings.range', { min: SPEC.translationTimeoutMs.min, max: SPEC.translationTimeoutMs.max }),
+                  option: 'translationTimeoutMs',
+                  value: settings.translationTimeoutMs,
+                  t,
+                  disabled: translationOff,
+                  onChange: (next) => update({ translationTimeoutMs: next }),
+                })),
+              h(TranslationTest, { settings, t })),
+
+            h(SettingsSection, {
+              title: t('settings.log'),
+              ...sectionReset('log'),
+            },
+              h(SettingsLine, {
+                title: t('settings.logLevel'),
+                hint: t('settings.logLevelHint'),
+              },
                 h(SettingsSegments, {
-                  group: 'translationProvider',
-                  label: t('settings.translationProvider'),
-                  ids: TRANSLATION_PROVIDERS,
-                  value: settings.translationProvider,
+                  group: 'logLevel',
+                  label: t('settings.logLevel'),
+                  ids: LOG_LEVELS,
+                  value: settings.logLevel,
                   t,
                   labelFor: (id) => id,
-                  onChange: (next) => update({ translationProvider: next }),
-                }),
-                h('span', { className: 'dshSPS_tileHint' }, t('settings.translationProviderHint'))),
-              h(SettingsTextCard, {
-                key: 'translationTargetLanguage',
-                title: t('settings.translationTargetLanguage'),
-                hint: t('settings.translationTargetLanguageHint'),
-                option: 'translationTargetLanguage',
-                value: settings.translationTargetLanguage,
-                t,
-                disabled: !settings.translation,
-                onChange: (next) => update({ translationTargetLanguage: next }),
-              }),
-              h(SettingsNumberCard, {
-                key: 'translationTimeoutMs',
-                title: t('settings.translationTimeoutMs'),
-                hint: t('settings.range', { min: SPEC.translationTimeoutMs.min, max: SPEC.translationTimeoutMs.max }),
-                option: 'translationTimeoutMs',
-                value: settings.translationTimeoutMs,
-                t,
-                disabled: !settings.translation,
-                onChange: (next) => update({ translationTimeoutMs: next }),
-              }))),
+                  onChange: (next) => update({ logLevel: next }),
+                })))),
 
-          h(SettingsSection, { title: t('settings.log') },
-            h(SettingsLine, {
-              title: t('settings.logLevel'),
-              hint: t('settings.logLevelHint'),
-            },
-              h(SettingsSegments, {
-                group: 'logLevel',
-                label: t('settings.logLevel'),
-                ids: LOG_LEVELS,
-                value: settings.logLevel,
-                t,
-                labelFor: (id) => id,
-                onChange: (next) => update({ logLevel: next }),
-              }))),
+          h(UpdatePanel, { t }),
 
           h('div', { className: 'dshSPS_foot' },
             h('button', {
@@ -2249,7 +2610,7 @@ window.__ModuleLoader__.load({
       const prevSourceRef = React.useRef(source)
       const configRef = React.useRef({
         provider: settings.translationProvider,
-        targetLanguage: settings.translationTargetLanguage,
+        targetLanguage: resolveTargetLanguage(settings.translationTargetLanguage),
         timeoutMs: settings.translationTimeoutMs,
         sessionId,
         maxChars: capability.maxTextChars ?? 4000,
@@ -2264,7 +2625,7 @@ window.__ModuleLoader__.load({
       sourceRef.current = source
       configRef.current = {
         provider: settings.translationProvider,
-        targetLanguage: settings.translationTargetLanguage,
+        targetLanguage: resolveTargetLanguage(settings.translationTargetLanguage),
         timeoutMs: settings.translationTimeoutMs,
         sessionId,
         maxChars: capability.maxTextChars ?? 4000,
@@ -2556,6 +2917,18 @@ window.__ModuleLoader__.load({
 
       const bound = typeof ctx.locale.bind === 'function' ? ctx.locale.bind(NS) : (key) => key
       translate = bound
+
+      const readLocale = () => {
+        try {
+          uiLocale = ctx.locale.getSnapshot?.().active ?? 'en'
+        } catch {
+          uiLocale = 'en'
+        }
+      }
+      readLocale()
+      if (typeof ctx.locale.subscribe === 'function') {
+        ctx.effect(() => ctx.locale.subscribe(readLocale), 'stream-polish: locale sync')
+      }
 
       // The settings page must survive `enabled: false` — that is how a user
       // turns the decoration back on — so its stylesheet is mounted separately
