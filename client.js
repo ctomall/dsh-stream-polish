@@ -1050,27 +1050,54 @@ window.__ModuleLoader__.load({
       }
 
       if (s.toolCardPolish) {
-        // Paint-only polish for the native tool rows: inset hairline and a
-        // faint surface, no border/padding, so width, hit area, and expanded
-        // height are unchanged. `:has` reads the row's own aria-expanded.
+        // Tool-card redesign using the same visual language as the step panel:
+        // a rounded surface, a state stripe, and a hairline drawn with
+        // box-shadow so width and hit area never move. Nested subcalls stay
+        // flat so one deep tree does not become cards inside cards.
         const tool = ':where([data-chat-flow] [data-tool])'
-        parts.push(tool + '{border-radius:10px;'
-          + 'background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 22%,transparent);'
-          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent);'
-          + 'transition:background-color .16s ease,box-shadow .16s ease}')
+        const nested = ':where([data-chat-flow] [data-tool] [data-tool])'
+        parts.push(tool + '{position:relative;box-sizing:border-box;margin:3px 0;padding:5px 10px 5px 12px;'
+          + 'border-radius:12px;'
+          + 'background:linear-gradient(180deg,'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 58%,transparent),'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 30%,transparent));'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 60%,transparent),'
+          + '0 1px 2px color-mix(in srgb,var(--dsw-alias-label-primary) 4%,transparent);'
+          + 'transition:background-color .16s ease,box-shadow .16s ease,transform .16s ease}')
+        parts.push(tool + '::before{content:"";position:absolute;left:5px;top:9px;bottom:9px;width:2px;'
+          + 'border-radius:2px;background:var(--dsw-alias-label-caption);opacity:.55;transition:background-color .16s ease,opacity .16s ease}')
         parts.push('@media (hover:hover){' + tool + ':hover{'
-          + 'background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 62%,transparent);'
-          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 85%,transparent),'
-          + '0 2px 10px color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent)}}')
+          + 'background:linear-gradient(180deg,'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 78%,transparent),'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 46%,transparent));'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 88%,transparent),'
+          + '0 4px 16px color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent)}}')
         parts.push(tool + ':has([aria-expanded="true"]){'
-          + 'background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 52%,transparent);'
-          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent)}')
+          + 'background:linear-gradient(180deg,'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 72%,transparent),'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 40%,transparent));'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 85%,transparent)}')
         parts.push(tool + '[data-state="running"],' + tool + '[data-state="pending"]{'
-          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-state-business-primary) 42%,transparent)}')
+          + 'background:linear-gradient(180deg,'
+          + 'color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,var(--dsw-alias-bg-layer-2)),'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 42%,transparent));'
+          + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent)}')
+        parts.push(tool + '[data-state="running"]::before,' + tool + '[data-state="pending"]::before{'
+          + 'background:var(--dsw-alias-state-business-primary);opacity:1;'
+          + 'animation:dshST_toolPulse 1.6s ease-in-out infinite}')
         parts.push(tool + '[data-state="error"]{'
+          + 'background:linear-gradient(180deg,'
+          + 'color-mix(in srgb,var(--dsw-alias-state-error-primary) 9%,var(--dsw-alias-bg-layer-2)),'
+          + 'color-mix(in srgb,var(--dsw-alias-bg-layer-2) 42%,transparent));'
           + 'box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent)}')
-        parts.push('@media (prefers-reduced-motion:reduce){' + tool + '{transition:none}}')
-        parts.push('@media (forced-colors:active){' + tool + '{box-shadow:none;background:Canvas}}')
+        parts.push(tool + '[data-state="error"]::before{background:var(--dsw-alias-state-error-primary);opacity:1}')
+        parts.push('@keyframes dshST_toolPulse{0%,100%{opacity:1}50%{opacity:.35}}')
+        parts.push(nested + '{margin:0;padding:0;border-radius:0;background:transparent;box-shadow:none}')
+        parts.push(nested + '::before{display:none}')
+        parts.push('@media (prefers-reduced-motion:reduce){' + tool + '{transition:none}'
+          + tool + '[data-state="running"]::before,' + tool + '[data-state="pending"]::before{animation:none}}')
+        parts.push('@media (forced-colors:active){' + tool + '{background:Canvas;box-shadow:none;color:CanvasText}'
+          + tool + '::before{background:Highlight}}')
       }
 
       if (s.stepPanel) {
@@ -1290,7 +1317,8 @@ window.__ModuleLoader__.load({
       '.dshSPS_demoPanel[data-phase=true] .dshSPS_demoRow[data-state=running] .dshSPS_demoRowDot{background:var(--dshSPS-accent)}',
       '.dshSPS_demoPanel[data-phase=true] .dshSPS_demoRow[data-state=running] .dshSPS_demoRowState{color:var(--dshSPS-accent)}',
       '.dshSPS_demoPanel[data-phase=true] .dshSPS_demoRow[data-kind=reply] .dshSPS_demoRowDot{background:var(--dsw-alias-label-secondary)}',
-      '.dshSPS_demoTool{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 62%,transparent);box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent)}',
+      '.dshSPS_demoTool{position:relative;display:flex;align-items:center;gap:8px;padding:5px 9px 5px 12px;border-radius:11px;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent),color-mix(in srgb,var(--dsw-alias-bg-layer-2) 36%,transparent));box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--dsw-alias-border-l2) 80%,transparent)}',
+      '.dshSPS_demoTool::before{content:"";position:absolute;left:5px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--dsw-alias-state-success-primary);opacity:.7}',
       '.dshSPS_demoToolMark{color:var(--dsw-alias-label-caption)}',
       '.dshSPS_demoToolTitle{font-weight:500;color:var(--dsw-alias-label-primary)}',
       '.dshSPS_demoToolSummary{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-family:ui-monospace,monospace}',
