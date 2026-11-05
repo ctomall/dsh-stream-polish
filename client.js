@@ -444,6 +444,8 @@ window.__ModuleLoader__.load({
       buildSteps,
       stablePrefix,
       rowDuration,
+      presetPatch,
+      presetActive,
     }
 
     /** Subscribe a component to the settings store. */

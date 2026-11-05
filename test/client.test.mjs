@@ -644,3 +644,15 @@ test('the bundle settings page renders without throwing', async () => {
   })
   assert.equal(previewTree.props.className, 'dshSPS_preview')
 })
+
+
+test('presets cover visuals only and never enable translation', async () => {
+  const { sandbox } = await loadClient()
+  const { presetPatch, presetActive } = sandbox.__DSH_STREAM_POLISH_CLIENT__
+  for (const name of ['calm', 'standard', 'full']) {
+    const patch = presetPatch(name)
+    assert.equal(patch.translation, false, name + ' leaves translation off')
+    assert.equal(presetActive({ ...sandbox.__DSH_STREAM_POLISH_CLIENT__.defaults, ...patch }, name), true)
+  }
+  assert.equal(presetActive({ ...sandbox.__DSH_STREAM_POLISH_CLIENT__.defaults, translation: true }, 'standard'), false)
+})
