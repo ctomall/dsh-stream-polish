@@ -19,7 +19,8 @@
     "lib/*.js",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "NOTICE.md"
   ],
   "scripts": {
     "test": "node --test test/config.test.mjs test/client.test.mjs test/host.test.mjs test/update.test.mjs test/routes.test.mjs test/browser.test.mjs",
