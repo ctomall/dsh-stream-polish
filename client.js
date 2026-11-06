@@ -245,6 +245,86 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Live translation capability, seeded from the index wire and refreshed by
+     * probing the authenticated route. A page can stay mounted across a Host
+     * reload, so the static wire alone is not authoritative.
+     */
+    let translationCapability = null
+    const translationCapabilityListeners = new Set()
+
+    /**
+     * Read the current capability, seeding it from the wire on first use.
+     * @returns {{ available: boolean, maxTextChars: number | null, routeMissing: boolean }} capability.
+     */
+    function currentTranslationCapability() {
+      if (translationCapability === null) {
+        const wire = readCapabilities().translation
+        translationCapability = {
+          available: wire.available,
+          maxTextChars: wire.maxTextChars,
+          routeMissing: false,
+        }
+      }
+      return translationCapability
+    }
+
+    /**
+     * Publish a capability change to every live consumer.
+     * @param {{ available: boolean, maxTextChars: number | null, routeMissing: boolean }} next - capability.
+     */
+    function setTranslationCapability(next) {
+      translationCapability = next
+      for (const listener of [...translationCapabilityListeners]) {
+        try {
+          listener()
+        } catch (error) {
+          console.error(PREFIX + 'capability listener failed: ' + String(error))
+        }
+      }
+    }
+
+    /**
+     * Subscribe to capability changes.
+     * @param {() => void} listener - change callback.
+     * @returns {() => void} unsubscribe.
+     */
+    function subscribeTranslationCapability(listener) {
+      translationCapabilityListeners.add(listener)
+      return () => translationCapabilityListeners.delete(listener)
+    }
+
+    let capabilityProbe = null
+
+    /**
+     * Probe the authenticated capability route once per in-flight call.
+     *
+     * This is what lets an already-open page notice a Host reload: the wire in
+     * its HTML is old, but `/translation` is served by the new Host.
+     * @returns {Promise<void>} resolves after the capability is updated.
+     */
+    function probeTranslationCapability() {
+      if (capabilityProbe !== null) return capabilityProbe
+      capabilityProbe = (async () => {
+        const result = await apiCall('/translation')
+        const current = currentTranslationCapability()
+        if (result !== null && result !== undefined && result.ok === true) {
+          setTranslationCapability({
+            available: result.available === true,
+            maxTextChars: Number.isInteger(result.maxTextChars) ? result.maxTextChars : current.maxTextChars,
+            routeMissing: false,
+          })
+          return
+        }
+        if (result !== null && result !== undefined && result.error === 'no-route') {
+          setTranslationCapability({ ...current, available: false, routeMissing: true })
+        }
+      })().finally(() => {
+        capabilityProbe = null
+      })
+      return capabilityProbe
+    }
+
+    /**
      * Read this browser's saved overrides.
      * @returns {unknown} the stored object, or undefined when absent or unreadable.
      */
@@ -446,6 +526,8 @@ window.__ModuleLoader__.load({
       rowDuration,
       presetPatch,
       presetActive,
+      get pageCss() { return PAGE_CSS },
+      get dictionaries() { return { zh, en } },
     }
 
     /** Subscribe a component to the settings store. */
@@ -591,6 +673,7 @@ window.__ModuleLoader__.load({
       'preview.stepHeader': '本轮步骤',
       'preview.earlier': '更早 {n} 条',
       'settings.range': '{min}–{max} 毫秒',
+      'settings.rangeCount': '{min}–{max}',
       'settings.loading': '读取版本…',
       'settings.version': '版本 {version}',
       'settings.commit': '提交 {commit}',
@@ -757,6 +840,7 @@ window.__ModuleLoader__.load({
       'preview.stepHeader': 'This turn',
       'preview.earlier': '{n} earlier',
       'settings.range': '{min}–{max} ms',
+      'settings.rangeCount': '{min}–{max}',
       'settings.loading': 'Reading version…',
       'settings.version': 'Version {version}',
       'settings.commit': 'Commit {commit}',
@@ -1204,7 +1288,7 @@ window.__ModuleLoader__.load({
 
     /** Settings-page styles; mounted whether or not the decoration is enabled. */
     const PAGE_CSS = [
-      '.dshSPS_page{display:flex;flex-direction:column;gap:18px;max-width:860px;color:var(--dsw-alias-label-primary);color-scheme:inherit;background:transparent}',
+      '.dshSPS_page{display:flex;flex-direction:column;gap:18px;max-width:860px;color:var(--dsw-alias-label-primary);color-scheme:inherit;background:transparent;container-type:inline-size}',
       '.dshSPS_head{display:flex;flex-direction:column;gap:4px}',
       '.dshSPS_title{margin:0;font-size:15px;font-weight:600;line-height:22px}',
       '.dshSPS_intro{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
@@ -1363,7 +1447,7 @@ window.__ModuleLoader__.load({
       '.dshSPS_section{grid-column:span 12;gap:0;min-width:0;padding:16px;border:.5px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}',
       '.dshSPS_section[data-span="7"]{grid-column:span 7}',
       '.dshSPS_section[data-span="5"]{grid-column:span 5}',
-      '@media (max-width:900px){.dshSPS_section{grid-column:span 12!important}}',
+      '@container (max-width:720px){.dshSPS_section{grid-column:span 12!important}}',
       '.dshSPS_sectionHead{padding-bottom:8px;gap:8px;border-bottom:.5px solid color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent)}',
       '.dshSPS_sectionHeading{gap:4px 12px;flex-wrap:wrap}',
       '.dshSPS_sectionTitle{font-size:13px;line-height:18px;font-weight:500}',
@@ -2008,7 +2092,7 @@ window.__ModuleLoader__.load({
     function TranslationTest(props) {
       const { settings, t } = props
       const [state, setState] = React.useState({ busy: false, text: null, code: null })
-      const available = readWireVersion() === WIRE_VERSION && readCapabilities().translation.available
+      const available = currentTranslationCapability().available
       const run = async () => {
         setState({ busy: true, text: null, code: null })
         const result = await apiCall('/translate', 'POST', {
@@ -2054,6 +2138,12 @@ window.__ModuleLoader__.load({
       // attribute/inline-token writes so every JS-rendered sample inside the
       // preview follows the new theme immediately.
       const [, setThemeTick] = React.useState(0)
+      const [, setCapabilityTick] = React.useState(0)
+      React.useEffect(() => {
+        const unsubscribe = subscribeTranslationCapability(() => setCapabilityTick((value) => value + 1))
+        void probeTranslationCapability()
+        return unsubscribe
+      }, [])
       React.useEffect(() => {
         if (typeof MutationObserver !== 'function' || typeof document === 'undefined' || document.body === null) {
           return undefined
@@ -2105,7 +2195,9 @@ window.__ModuleLoader__.load({
           }))
         const number = (key, disabled) => h(SettingsLine, {
           title: t('settings.' + key),
-          hint: t('settings.range', { min: SPEC[key].min, max: SPEC[key].max }),
+          hint: key.endsWith('Ms')
+            ? t('settings.range', { min: SPEC[key].min, max: SPEC[key].max })
+            : t('settings.rangeCount', { min: SPEC[key].min, max: SPEC[key].max }),
         },
           h(SettingsNumber, {
             option: key,
@@ -2222,9 +2314,9 @@ window.__ModuleLoader__.load({
                 checked: settings.translation,
                 onChange: (next) => update({ translation: next }),
               }),
-              readWireVersion() !== WIRE_VERSION
+              currentTranslationCapability().routeMissing
                 ? h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationStaleHost'))
-                : readCapabilities().translation.available
+                : currentTranslationCapability().available
                   ? null
                   : h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationUnavailable')),
               h('p', { className: 'dshSPS_note' }, t('settings.translationPrivacy')),
@@ -2741,7 +2833,7 @@ window.__ModuleLoader__.load({
         : (typeof props.rawText === 'string' ? props.rawText : '')
       const running = props.running === true
       const sessionId = typeof props.sessionId === 'string' ? props.sessionId : undefined
-      const [capability, setCapability] = React.useState(() => readCapabilities().translation)
+      const [capability, setCapability] = React.useState(() => currentTranslationCapability())
       const [showOriginal, setShowOriginal] = React.useState(false)
       const [version, setVersion] = React.useState(0)
       const [translation, setTranslation] = React.useState({
@@ -2778,14 +2870,17 @@ window.__ModuleLoader__.load({
       /** Ask the Host capability route once per mount; the wire fallback still works. */
       React.useEffect(() => {
         let alive = true
-        apiCall('/translation').then((result) => {
-          if (!alive || result?.ok !== true) return
-          setCapability({
-            available: result.available === true,
-            maxTextChars: Number.isInteger(result.maxTextChars) ? result.maxTextChars : null,
-          })
-        })
-        return () => { alive = false }
+        const sync = () => {
+          if (!alive) return
+          const next = currentTranslationCapability()
+          setCapability({ available: next.available, maxTextChars: next.maxTextChars })
+        }
+        const unsubscribe = subscribeTranslationCapability(sync)
+        void probeTranslationCapability()
+        return () => {
+          alive = false
+          unsubscribe()
+        }
       }, [])
 
       /** Translate as much of the stable prefix as currently exists. */
@@ -3071,6 +3166,9 @@ window.__ModuleLoader__.load({
       if (typeof ctx.locale.subscribe === 'function') {
         ctx.effect(() => ctx.locale.subscribe(readLocale), 'stream-polish: locale sync')
       }
+      // The HTML may have been served before a Host reload; the route is the
+      // authoritative capability source.
+      void probeTranslationCapability()
 
       // The settings page must survive `enabled: false` — that is how a user
       // turns the decoration back on — so its stylesheet is mounted separately
@@ -3128,7 +3226,7 @@ window.__ModuleLoader__.load({
           // Without the Host-published translator capability, keep Chat's own
           // body: a wrapper that can only show the original is pure noise.
           const wanted = store.get().enabled && store.get().translation
-            && readCapabilities().translation.available
+            && currentTranslationCapability().available
           if (wanted && active === null) {
             active = ctx.slots.register({
               name: 'conversation.chat.reasoning.body',
@@ -3142,8 +3240,10 @@ window.__ModuleLoader__.load({
         }
         sync()
         const unsubscribe = store.subscribe(sync)
+        const unsubscribeCapability = subscribeTranslationCapability(sync)
         return () => {
           unsubscribe()
+          unsubscribeCapability()
           if (active !== null) {
             active()
             active = null
