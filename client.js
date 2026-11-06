@@ -472,7 +472,7 @@ window.__ModuleLoader__.load({
       'aria': '{phase}，已用 {elapsed}，{activity}',
       tab: '流式输出美化',
       'settings.title': '流式输出美化',
-      'settings.intro': '下面的开关立即生效，并只保存在本浏览器；默认值来自插件在档案里的配置。',
+      'settings.intro': '给流式回复加淡入与光标，在输入框上方列出本轮步骤，并可按需翻译展开的思考。',
       'settings.display': '显示',
       'settings.displayNote': '正文与胶囊',
       'settings.timing': '时长',
@@ -560,6 +560,12 @@ window.__ModuleLoader__.load({
       'settings.reset': '恢复默认',
       'settings.resetHint': '清除本浏览器的覆盖值',
       'settings.footHint': '改动立即生效；要成为所有浏览器的默认值，请改档案里的 cordis.patch.yml。',
+      'settings.declaration': '声明',
+      'settings.declarationNote': '范围、隐私与升级边界',
+      'declaration.scope': '本插件只改变显示：不写入 Session、模型输入、工具结果或滚动位置。',
+      'declaration.privacy': '思考翻译只会把你主动展开的思考片段发送给所选翻译服务（Bing / Google）；插件本身不收集、不上报任何数据，配置只保存在本浏览器。',
+      'declaration.upgrade': '在线升级只对插件目录执行 git fetch 与快进合并；失败会回滚，不会改写其他文件。',
+      'declaration.credit': '页面设计方法：unslop by Damir Sokolovsky（CC BY 4.0）。',
       'settings.presets': '快速预设',
       'settings.preset.calm': '克制',
       'settings.preset.standard': '标准',
@@ -632,7 +638,7 @@ window.__ModuleLoader__.load({
       'aria': '{phase}, {elapsed} elapsed, {activity}',
       tab: 'Stream polish',
       'settings.title': 'Stream polish',
-      'settings.intro': 'These switches apply immediately and live in this browser only; the row config in the profile supplies the defaults.',
+      'settings.intro': 'Fades streamed replies, adds a breathing caret, lists this turn\u2019s steps above the composer, and can translate expanded reasoning on demand.',
       'settings.display': 'Display',
       'settings.displayNote': 'Transcript and capsule',
       'settings.timing': 'Timing',
@@ -720,6 +726,12 @@ window.__ModuleLoader__.load({
       'settings.reset': 'Reset',
       'settings.resetHint': 'Clear this browser\u2019s overrides',
       'settings.footHint': 'Changes apply immediately; edit the profile cordis.patch.yml to change the defaults for every browser.',
+      'settings.declaration': 'Declaration',
+      'settings.declarationNote': 'Scope, privacy, and upgrade boundary',
+      'declaration.scope': 'This plugin changes presentation only: it never writes Session events, model input, tool results, or scroll position.',
+      'declaration.privacy': 'Reasoning translation sends only the fragment you expand to the selected service (Bing / Google). The plugin itself collects and reports nothing; settings stay in this browser.',
+      'declaration.upgrade': 'Online upgrade only runs git fetch and a fast-forward merge in the plugin checkout; failures roll back and no other file is touched.',
+      'declaration.credit': 'Page design method: unslop by Damir Sokolovsky (CC BY 4.0).',
       'settings.presets': 'Presets',
       'settings.preset.calm': 'Calm',
       'settings.preset.standard': 'Standard',
@@ -1338,6 +1350,54 @@ window.__ModuleLoader__.load({
       '@media (prefers-reduced-motion:reduce){.dshSPS_demoLine.dshSPS_demoIn,.dshSPS_demoCaret,.dshSPS_demoPillDot,.dshSPS_demoPanel[data-motion=true] .dshSPS_demoRow{animation:none}}',
       '@media (max-width:560px){.dshSPS_master{flex-wrap:wrap;gap:10px}.dshSPS_grid{grid-template-columns:1fr}.dshSPS_previewHint{display:none}}',
       '@media (prefers-reduced-motion:reduce){.dshSPS_switch,.dshSPS_knob{transition:none}}',
+      // Unslop pass: quiet chrome, one live preview moment, 4px rhythm.
+      '.dshSPS_page{gap:24px}',
+      '.dshSPS_head{gap:16px}',
+      '.dshSPS_headText{gap:4px}',
+      '.dshSPS_title{font-size:16px;line-height:24px;font-weight:500}',
+      '.dshSPS_intro{font-size:13px;line-height:20px;max-width:60ch}',
+      '.dshSPS_badge{height:auto;padding:0;border:0;border-radius:0;font-family:ui-monospace,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);background:none}',
+      '.dshSPS_presets{gap:12px;padding-top:0}',
+      '.dshSPS_presetsLabel,.dshSPS_presetsHint{font-size:12px;line-height:16px}',
+      '.dshSPS_board{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;align-items:start}',
+      '.dshSPS_section{grid-column:span 12;gap:0;min-width:0;padding:16px;border:.5px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}',
+      '.dshSPS_section[data-span="7"]{grid-column:span 7}',
+      '.dshSPS_section[data-span="5"]{grid-column:span 5}',
+      '@media (max-width:900px){.dshSPS_section{grid-column:span 12!important}}',
+      '.dshSPS_sectionHead{padding-bottom:8px;gap:8px;border-bottom:.5px solid color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent)}',
+      '.dshSPS_sectionHeading{gap:4px 12px;flex-wrap:wrap}',
+      '.dshSPS_sectionTitle{font-size:13px;line-height:18px;font-weight:500}',
+      '.dshSPS_sectionNote{font-size:12px;line-height:16px;white-space:normal}',
+      '.dshSPS_master{margin-top:8px;padding:12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_masterTitle{font-size:13px;line-height:18px;font-weight:500}',
+      '.dshSPS_masterHint{font-size:12px;line-height:16px}',
+      '.dshSPS_line{padding:12px 0;border:0;border-bottom:.5px solid color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent);border-radius:0;background:transparent}',
+      '.dshSPS_line:last-child{border-bottom:0;padding-bottom:0}',
+      '.dshSPS_lineTitle{font-size:13px;line-height:18px}',
+      '.dshSPS_lineHint{font-size:12px;line-height:16px;max-width:56ch}',
+      '.dshSPS_preview{padding:16px;gap:12px;border:.5px solid var(--dsw-alias-border-l1);border-radius:16px;background:var(--dsw-alias-bg-layer-1)}',
+      '.dshSPS_previewBar{gap:12px;flex-wrap:wrap}',
+      '.dshSPS_previewTag{font-size:13px;line-height:18px;font-weight:500}',
+      '.dshSPS_previewHint{margin-left:0;flex:1;min-width:160px;font-size:12px;line-height:16px;text-align:left}',
+      '.dshSPS_previewActions{margin-left:auto;display:flex;gap:8px}',
+      '.dshSPS_previewStage{gap:12px;padding:12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base)}',
+      '.dshSPS_demoLines{gap:4px}',
+      '.dshSPS_demoLine{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}',
+      '.dshSPS_demoPill{height:24px;padding:0 8px;border-radius:8px;border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);font-size:11px;line-height:16px}',
+      '.dshSPS_demoPanel{border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
+      '.dshSPS_demoPanelHead{padding:4px 8px;font-size:11px;line-height:16px}',
+      '.dshSPS_demoRow{padding:4px 8px;font-size:11px;line-height:16px}',
+      '.dshSPS_demoTool{padding:4px 8px 4px 12px;border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
+      '.dshSPS_demoTranslate{gap:8px;font-size:11px;line-height:16px}',
+      '.dshSPS_test{padding:12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_testTitle{font-size:13px;line-height:18px}',
+      '.dshSPS_testHint{font-size:12px;line-height:16px}',
+      '.dshSPS_declaration{display:flex;flex-direction:column;gap:8px;padding-top:8px}',
+      '.dshSPS_note{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);max-width:72ch}',
+      '.dshSPS_credit{margin:4px 0 0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.dshSPS_button{border-radius:8px}',
+      '.dshSPS_switch{background:var(--dsw-alias-bg-layer-2)}',
+      '.dshSPS_knob{background:var(--dsw-static-neutral-bluish-00,#fff)}',
     ].join('')
 
     /**
@@ -1346,7 +1406,10 @@ window.__ModuleLoader__.load({
      * @returns {object} the section element.
      */
     function SettingsSection(props) {
-      return h('section', { className: 'dshSPS_section' },
+      return h('section', {
+        className: 'dshSPS_section',
+        'data-span': props.span === undefined ? undefined : String(props.span),
+      },
         h('div', { className: 'dshSPS_sectionHead' },
           h('div', { className: 'dshSPS_sectionHeading' },
             h('h4', { className: 'dshSPS_sectionTitle' }, props.title),
@@ -1552,7 +1615,46 @@ window.__ModuleLoader__.load({
             if (!valid) setDraft(String(props.value))
           },
         }),
-        h('span', { className: 'dshSPS_unit' }, 'ms'))
+        h('span', { className: 'dshSPS_unit' }, props.unit ?? 'ms'))
+    }
+
+    /**
+     * Pattern-validated inline text field (accent colour, language tag).
+     * @param {{ option: string, value: string, t: Function, disabled?: boolean, swatch?: boolean, onChange: Function }} props - field state.
+     * @returns {object} the inline field.
+     */
+    function SettingsText(props) {
+      const rule = SPEC[props.option]
+      const [draft, setDraft] = React.useState(String(props.value))
+      React.useEffect(() => {
+        setDraft(String(props.value))
+      }, [props.value])
+      const valid = rule.pattern.test(draft)
+      return h('span', { className: 'dshSPS_num' },
+        props.swatch === true
+          ? h('span', {
+            className: 'dshSPS_swatch',
+            'aria-hidden': true,
+            style: { background: valid ? draft : String(props.value) },
+          })
+          : null,
+        h('input', {
+          className: 'dshSPS_input dshSPS_inputText',
+          type: 'text',
+          value: draft,
+          spellCheck: false,
+          autoComplete: 'off',
+          disabled: props.disabled === true ? true : undefined,
+          'aria-label': props.t('settings.' + props.option),
+          'aria-invalid': valid ? undefined : 'true',
+          onChange: (event) => {
+            setDraft(event.target.value)
+            if (rule.pattern.test(event.target.value)) props.onChange(event.target.value)
+          },
+          onBlur: () => {
+            if (!valid) setDraft(String(props.value))
+          },
+        }))
     }
 
     /**
@@ -1871,18 +1973,19 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dshSPS_previewBar' },
           h('span', { className: 'dshSPS_previewTag' }, t('preview.live')),
           h('span', { className: 'dshSPS_previewHint' }, t('preview.hint')),
-          h('button', {
-            type: 'button',
-            className: 'dshSPS_button',
-            disabled: !settings.enabled,
-            onClick: () => setPlaying((value) => !value),
-          }, playing ? t('preview.pause') : t('preview.play')),
-          h('button', {
-            type: 'button',
-            className: 'dshSPS_button',
-            disabled: !settings.enabled,
-            onClick: () => setCycle((value) => value + 1),
-          }, t('preview.replay'))),
+          h('div', { className: 'dshSPS_previewActions' },
+            h('button', {
+              type: 'button',
+              className: 'dshSPS_button',
+              disabled: !settings.enabled,
+              onClick: () => setPlaying((value) => !value),
+            }, playing ? t('preview.pause') : t('preview.play')),
+            h('button', {
+              type: 'button',
+              className: 'dshSPS_button',
+              disabled: !settings.enabled,
+              onClick: () => setCycle((value) => value + 1),
+            }, t('preview.replay')))),
         settings.enabled
           ? h('div', { className: 'dshSPS_previewStage', key: cycle, style: stageStyle, 'data-playing': playing ? 'true' : 'false' },
             h('div', { className: 'dshSPS_demoLines' },
@@ -1946,11 +2049,26 @@ window.__ModuleLoader__.load({
       const t = typeof props.t === 'function' ? props.t : translate
       const update = (patch) => store.update(patch)
 
+      // The page is painted by tokens, but a theme flip can also happen while
+      // this routed page stays mounted. Re-render on the body's palette
+      // attribute/inline-token writes so every JS-rendered sample inside the
+      // preview follows the new theme immediately.
+      const [, setThemeTick] = React.useState(0)
+      React.useEffect(() => {
+        if (typeof MutationObserver !== 'function' || typeof document === 'undefined' || document.body === null) {
+          return undefined
+        }
+        const observer = new MutationObserver(() => setThemeTick((value) => value + 1))
+        observer.observe(document.body, {
+          attributes: true,
+          attributeFilter: ['data-ds-dark-theme', 'style'],
+        })
+        return () => observer.disconnect()
+      }, [])
+
       try {
         return renderPage()
       } catch (error) {
-        // A crash here would blank the slot entry with only a console line, so
-        // show the failure in place instead.
         return h('div', { className: 'dshSPS_page' },
           h('p', { className: 'dshSPS_status', 'data-tone': 'error' },
             'settings page failed: ' + (error instanceof Error ? error.message : String(error))))
@@ -1961,6 +2079,7 @@ window.__ModuleLoader__.load({
         const stripOff = !settings.runStrip
         const panelOff = !settings.stepPanel
         const translationOff = !settings.translation
+        const activePreset = PRESET_NAMES.find((name) => presetActive(settings, name)) ?? ''
         const resetGroup = (keys) => {
           const base = store.baseline()
           const patch = {}
@@ -1974,25 +2093,40 @@ window.__ModuleLoader__.load({
           translation: ['translation', 'translationProvider', 'translationTargetLanguage', 'translationTimeoutMs'],
           log: ['logLevel'],
         }
-        const toggle = (key, disabled) => h(SettingsToggleCard, {
-          key,
+        const row = (key, disabled) => h(SettingsLine, {
           title: t('settings.' + key),
           hint: t('settings.' + key + 'Hint'),
-          label: t('settings.' + key),
-          checked: settings[key],
-          disabled,
-          onChange: (next) => update({ [key]: next }),
-        })
-        const field = (key, disabled) => h(SettingsNumberCard, {
-          key,
+        },
+          h(SettingsSwitch, {
+            checked: settings[key],
+            label: t('settings.' + key),
+            disabled,
+            onChange: (next) => update({ [key]: next }),
+          }))
+        const number = (key, disabled) => h(SettingsLine, {
           title: t('settings.' + key),
           hint: t('settings.range', { min: SPEC[key].min, max: SPEC[key].max }),
-          option: key,
-          value: settings[key],
-          t,
-          disabled,
-          onChange: (next) => update({ [key]: next }),
-        })
+        },
+          h(SettingsNumber, {
+            option: key,
+            value: settings[key],
+            t,
+            disabled,
+            unit: key.endsWith('Ms') ? 'ms' : '',
+            onChange: (next) => update({ [key]: next }),
+          }))
+        const text = (key, disabled, swatch) => h(SettingsLine, {
+          title: t('settings.' + key),
+          hint: t('settings.' + key + 'Hint'),
+        },
+          h(SettingsText, {
+            option: key,
+            value: settings[key],
+            t,
+            disabled,
+            swatch,
+            onChange: (next) => update({ [key]: next }),
+          }))
         const sectionReset = (group) => ({
           onReset: () => resetGroup(groups[group]),
           resetLabel: t('settings.resetGroup'),
@@ -2005,17 +2139,20 @@ window.__ModuleLoader__.load({
               h('div', { className: 'dshSPS_headText' },
                 h('h3', { className: 'dshSPS_title' }, t('settings.title')),
                 h('p', { className: 'dshSPS_intro' }, t('settings.intro'))),
-              h('div', { className: 'dshSPS_meta' },
-                store.isDefault() ? null : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal')))),
+              store.isDefault()
+                ? null
+                : h('span', { className: 'dshSPS_badge' }, t('settings.badgeLocal'))),
             h('div', { className: 'dshSPS_presets' },
               h('span', { className: 'dshSPS_presetsLabel' }, t('settings.presets')),
-              PRESET_NAMES.map((name) => h('button', {
-                key: name,
-                type: 'button',
-                className: 'dshSPS_presetBtn',
-                'data-active': presetActive(settings, name) ? 'true' : undefined,
-                onClick: () => update(presetPatch(name)),
-              }, t('settings.preset.' + name))),
+              h(SettingsSegments, {
+                group: 'presets',
+                label: t('settings.presets'),
+                ids: PRESET_NAMES,
+                value: activePreset,
+                t,
+                labelFor: (id) => t('settings.preset.' + id),
+                onChange: (name) => update(presetPatch(name)),
+              }),
               h('span', { className: 'dshSPS_presetsHint' }, t('settings.presetHint')))),
 
           h(PreviewPanel, { settings, t }),
@@ -2024,6 +2161,7 @@ window.__ModuleLoader__.load({
             h(SettingsSection, {
               title: t('settings.display'),
               note: t('settings.displayNote'),
+              span: 7,
               ...sectionReset('display'),
             },
               h(SettingsMaster, {
@@ -2033,18 +2171,18 @@ window.__ModuleLoader__.load({
                 checked: settings.enabled,
                 onChange: (next) => update({ enabled: next }),
               }),
-              h('div', { className: 'dshSPS_grid' },
-                toggle('blockFade', !settings.enabled),
-                toggle('caret', !settings.enabled),
-                toggle('settleFade', !settings.enabled || caretOff),
-                toggle('runStrip', !settings.enabled),
-                toggle('showElapsed', !settings.enabled || stripOff),
-                toggle('showActivity', !settings.enabled || stripOff),
-                toggle('toolCardPolish', !settings.enabled))),
+              row('blockFade', !settings.enabled),
+              row('caret', !settings.enabled),
+              row('settleFade', !settings.enabled || caretOff),
+              row('runStrip', !settings.enabled),
+              row('showElapsed', !settings.enabled || stripOff),
+              row('showActivity', !settings.enabled || stripOff),
+              row('toolCardPolish', !settings.enabled)),
 
             h(SettingsSection, {
               title: t('settings.steps'),
               note: t('settings.stepsNote'),
+              span: 5,
               ...sectionReset('steps'),
             },
               h(SettingsMaster, {
@@ -2054,46 +2192,27 @@ window.__ModuleLoader__.load({
                 checked: settings.stepPanel,
                 onChange: (next) => update({ stepPanel: next }),
               }),
-              h('div', { className: 'dshSPS_grid' },
-                h(SettingsNumberCard, {
-                  key: 'stepPanelRows',
-                  title: t('settings.stepPanelRows'),
-                  hint: t('settings.stepPanelRowsHint'),
-                  option: 'stepPanelRows',
-                  value: settings.stepPanelRows,
-                  t,
-                  disabled: !settings.enabled || panelOff,
-                  onChange: (next) => update({ stepPanelRows: next }),
-                }),
-                h(SettingsTextCard, {
-                  key: 'stepPanelAccent',
-                  title: t('settings.stepPanelAccent'),
-                  hint: t('settings.stepPanelAccentHint'),
-                  option: 'stepPanelAccent',
-                  value: settings.stepPanelAccent,
-                  swatch: true,
-                  t,
-                  disabled: !settings.enabled || panelOff,
-                  onChange: (next) => update({ stepPanelAccent: next }),
-                }),
-                toggle('stepPanelMotion', !settings.enabled || panelOff),
-                toggle('stepPanelPhaseColors', !settings.enabled || panelOff),
-                toggle('replaceToolRows', !settings.enabled || panelOff))),
+              number('stepPanelRows', !settings.enabled || panelOff),
+              text('stepPanelAccent', !settings.enabled || panelOff, true),
+              row('stepPanelMotion', !settings.enabled || panelOff),
+              row('stepPanelPhaseColors', !settings.enabled || panelOff),
+              row('replaceToolRows', !settings.enabled || panelOff)),
 
             h(SettingsSection, {
               title: t('settings.timing'),
               note: t('settings.timingNote'),
+              span: 5,
               ...sectionReset('timing'),
             },
-              h('div', { className: 'dshSPS_grid' },
-                field('blockFadeMs', !settings.enabled || !settings.blockFade),
-                field('caretPeriodMs', !settings.enabled || caretOff),
-                field('settleMs', !settings.enabled || caretOff || !settings.settleFade),
-                field('stallMs', !settings.enabled))),
+              number('blockFadeMs', !settings.enabled || !settings.blockFade),
+              number('caretPeriodMs', !settings.enabled || caretOff),
+              number('settleMs', !settings.enabled || caretOff || !settings.settleFade),
+              number('stallMs', !settings.enabled)),
 
             h(SettingsSection, {
               title: t('settings.translation'),
               note: t('settings.translationNote'),
+              span: 7,
               ...sectionReset('translation'),
             },
               h(SettingsMaster, {
@@ -2108,45 +2227,27 @@ window.__ModuleLoader__.load({
                 : readCapabilities().translation.available
                   ? null
                   : h('div', { className: 'dshSPS_status', 'data-tone': 'error' }, t('settings.translationUnavailable')),
-              h('div', { className: 'dshSPS_line' },
-                h('span', { className: 'dshSPS_lineHint' }, t('settings.translationPrivacy'))),
-              h('div', { className: 'dshSPS_grid' },
-                h('div', { className: 'dshSPS_tile' },
-                  h('span', { className: 'dshSPS_tileTitle' }, t('settings.translationProvider')),
-                  h(SettingsSegments, {
-                    group: 'translationProvider',
-                    label: t('settings.translationProvider'),
-                    ids: TRANSLATION_PROVIDERS,
-                    value: settings.translationProvider,
-                    t,
-                    labelFor: (id) => id,
-                    onChange: (next) => update({ translationProvider: next }),
-                  }),
-                  h('span', { className: 'dshSPS_tileHint' }, t('settings.translationProviderHint'))),
-                h(SettingsTextCard, {
-                  key: 'translationTargetLanguage',
-                  title: t('settings.translationTargetLanguage'),
-                  hint: t('settings.translationTargetLanguageHint'),
-                  option: 'translationTargetLanguage',
-                  value: settings.translationTargetLanguage,
+              h('p', { className: 'dshSPS_note' }, t('settings.translationPrivacy')),
+              h(SettingsLine, {
+                title: t('settings.translationProvider'),
+                hint: t('settings.translationProviderHint'),
+              },
+                h(SettingsSegments, {
+                  group: 'translationProvider',
+                  label: t('settings.translationProvider'),
+                  ids: TRANSLATION_PROVIDERS,
+                  value: settings.translationProvider,
                   t,
-                  disabled: translationOff,
-                  onChange: (next) => update({ translationTargetLanguage: next }),
-                }),
-                h(SettingsNumberCard, {
-                  key: 'translationTimeoutMs',
-                  title: t('settings.translationTimeoutMs'),
-                  hint: t('settings.range', { min: SPEC.translationTimeoutMs.min, max: SPEC.translationTimeoutMs.max }),
-                  option: 'translationTimeoutMs',
-                  value: settings.translationTimeoutMs,
-                  t,
-                  disabled: translationOff,
-                  onChange: (next) => update({ translationTimeoutMs: next }),
+                  labelFor: (id) => id,
+                  onChange: (next) => update({ translationProvider: next }),
                 })),
+              text('translationTargetLanguage', translationOff),
+              number('translationTimeoutMs', translationOff),
               h(TranslationTest, { settings, t })),
 
             h(SettingsSection, {
               title: t('settings.log'),
+              span: 12,
               ...sectionReset('log'),
             },
               h(SettingsLine, {
@@ -2161,7 +2262,18 @@ window.__ModuleLoader__.load({
                   t,
                   labelFor: (id) => id,
                   onChange: (next) => update({ logLevel: next }),
-                })))),
+                }))),
+
+            h(SettingsSection, {
+              title: t('settings.declaration'),
+              note: t('settings.declarationNote'),
+              span: 12,
+            },
+              h('div', { className: 'dshSPS_declaration' },
+                h('p', { className: 'dshSPS_note' }, t('declaration.scope')),
+                h('p', { className: 'dshSPS_note' }, t('declaration.privacy')),
+                h('p', { className: 'dshSPS_note' }, t('declaration.upgrade')),
+                h('p', { className: 'dshSPS_credit' }, t('declaration.credit'))))),
 
           h(UpdatePanel, { t }),
 

@@ -1,6 +1,6 @@
 {
   "name": "@local/stream-polish",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "description": "Soft block fade, breathing caret, run capsule, this-turn step panel, and optional reasoning translation",
   "type": "module",
